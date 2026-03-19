@@ -81,14 +81,30 @@ app.get('/health', async (req, res) => {
 app.get('/debug', (req, res) => {
   res.json({
     mysqlVars: {
-      host: process.env.MYSQLHOST ? 'OK' : 'MISSING',
-      port: process.env.MYSQLPORT,
-      user: process.env.MYSQLUSER ? 'OK' : 'MISSING',
-      pass: process.env.MYSQLPASSWORD ? 'OK' : 'MISSING',
-      db: process.env.MYSQLDATABASE ? 'OK' : 'MISSING'
+      host: {
+        exists: !!process.env.MYSQLHOST,
+        value: process.env.MYSQLHOST || null
+      },
+      port: {
+        exists: !!process.env.MYSQLPORT,
+        value: process.env.MYSQLPORT || null
+      },
+      user: {
+        exists: !!process.env.MYSQLUSER,
+        value: process.env.MYSQLUSER || null
+      },
+      pass: {
+        exists: !!process.env.MYSQLPASSWORD,
+        value: process.env.MYSQLPASSWORD ? '***OCULTA***' : null
+      },
+      db: {
+        exists: !!process.env.MYSQLDATABASE,
+        value: process.env.MYSQLDATABASE || null
+      }
     }
   });
 });
+
 
 // =====================
 // API Login
