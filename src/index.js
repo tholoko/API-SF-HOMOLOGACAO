@@ -1194,6 +1194,93 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
   }
 });
 
+app.patch('/api/gestao-usuarios/:id(\\d+)/foto', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const foto = req.body?.foto;
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de usuário inválido.'
+      });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT ID, FOTO FROM SF_USUARIO WHERE ID = ? LIMIT 1`,
+      [id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuário não encontrado.'
+      });
+    }
+
+    const atual = rows[0];
+    let fotoFinal = atual.FOTO ?? null;
+
+    if (foto === null) {
+      fotoFinal = null;
+    } else if (typeof foto === 'string' && foto.trim() !== '') {
+      fotoFinal = foto.trim();
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe uma foto válida ou null para remover.'
+      });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE SF_USUARIO SET FOTO = ? WHERE ID = ?`,
+      [fotoFinal, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuário não encontrado.'
+      });
+    }
+
+    if (foto === null && atual.FOTO) {
+      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
+      if (nomeArq) {
+        await apagarArquivoSeExistir(path.join(PASTA_FOTO_USUARIO, nomeArq));
+      }
+    }
+
+    if (
+      typeof foto === 'string' &&
+      foto.trim() &&
+      atual.FOTO &&
+      atual.FOTO !== foto.trim()
+    ) {
+      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
+      if (nomeArq) {
+        await apagarArquivoSeExistir(path.join(PASTA_FOTO_USUARIO, nomeArq));
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Foto do usuário atualizada com sucesso.',
+      item: {
+        id,
+        foto: fotoFinal
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar foto do usuário.',
+      error: err.message
+    });
+  }
+});
+
+
 
 app.get('/api/setores', async (req, res) => {
   try {
