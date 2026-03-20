@@ -975,7 +975,6 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
 app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
   
   try {
-    console.log(req.body);
     const id = Number(req.params.id);
 
     const nome = titleCaseNome(req.body?.nome);
@@ -1011,8 +1010,8 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     const foto = req.body?.foto;
 
     const apelido = texto(req.body?.apelido);
-    const numero_calcado = String(req.body?.numerocalcado ?? '').trim() !== ''
-      ? Number(req.body?.numerocalcado)
+    const numero_calcado = String(req.body?.numero_calcado ?? '').trim() !== ''
+      ? Number(req.body?.numero_calcado)
       : null;
     const tamanhoCamisaBruto = texto(req.body?.tamanhocamisa || req.body?.tamanho_camisa);
     const tamanho_camisa = tamanhoCamisaBruto ? tamanhoCamisaBruto.toUpperCase() : null;
