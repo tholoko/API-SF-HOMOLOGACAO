@@ -820,77 +820,6 @@ app.patch('/api/gestao-usuarios/:id(\\d+)/senha-reset', async (req, res) => {
   }
 });
 
-app.get('/api/gestao-usuarios', async (req, res) => {
-  try {
-    const busca = texto(req.query?.q);
-    let sql = `
-      SELECT
-        id, nome, EMAIL, telefone, perfil, status, setor,
-        FUNCAO, DATA_ADMISSAO, CENTRO_CUSTO, LOCAL_TRABALHO,
-        CPF, RG, CNH, CNH_CATEGORIA, DATA_NASCIMENTO, ESTADO_CIVIL,
-        TELEFONE_PESSOAL, EMAIL_PESSOAL, CNH_VALIDADE, CNH_ARQUIVO, FOTO,
-        APELIDO, NUMERO_CALCADO, TAMANHO_CAMISA, TAMANHO_CALCA, SEXO,
-        TEM_FILHOS, QUANTIDADE_FILHOS, FILHOS
-      FROM SF_USUARIO
-    `;
-    const params = [];
-
-    if (busca) {
-      sql += ` WHERE nome LIKE ? OR EMAIL LIKE ? OR perfil LIKE ? OR setor LIKE ? `;
-      const like = `%${busca}%`;
-      params.push(like, like, like, like);
-    }
-
-    sql += ' ORDER BY nome ASC';
-
-    const rows = await pool.query(sql, params);
-    return res.json({ success: true, items: rows });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao listar usuários.',
-      error: err.message
-    });
-  }
-});
-
-
-
-app.get('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-
-    const rows = await pool.query(`
-      SELECT
-        id, nome, EMAIL, telefone, perfil, status, setor,
-        FUNCAO, DATA_ADMISSAO, CENTRO_CUSTO, LOCAL_TRABALHO,
-        CPF, RG, CNH, CNH_CATEGORIA, DATA_NASCIMENTO, ESTADO_CIVIL,
-        TELEFONE_PESSOAL, EMAIL_PESSOAL, CNH_VALIDADE, CNH_ARQUIVO, FOTO,
-        APELIDO, NUMERO_CALCADO, TAMANHO_CAMISA, TAMANHO_CALCA, SEXO,
-        TEM_FILHOS, QUANTIDADE_FILHOS, FILHOS
-      FROM SF_USUARIO
-      WHERE id = ?
-      LIMIT 1
-    `, [id]);
-
-    if (!rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuário não encontrado.'
-      });
-    }
-
-    return res.json({ success: true, item: rows[0] });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar usuário.',
-      error: err.message
-    });
-  }
-});
-
-
 app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
   try {
     const nome = titleCaseNome(req.body?.nome);
@@ -899,35 +828,53 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
     const telefone = somenteNumeros(req.body?.telefone);
     const perfil = texto(req.body?.perfil);
     const setor = titleCaseNome(req.body?.setor);
+
     const funcao = texto(req.body?.funcao);
-    const dataAdmissao = nullableDate(req.body?.dataadmissao);
-    const centroCusto = titleCaseNome(req.body?.localtrabalho || req.body?.centrocusto);
-    const localTrabalho = titleCaseNome(req.body?.unidadetrabalho);
-    const status = texto(req.body?.status || 'Ativo');
+    const data_admissao = nullableDate(req.body?.dataadmissao || req.body?.data_admissao);
+
+    const centro_custo = titleCaseNome(req.body?.localtrabalho || req.body?.local_trabalho || req.body?.centro_custo);
+    const local_trabalho = titleCaseNome(req.body?.unidadetrabalho || req.body?.unidade_trabalho || req.body?.local_trabalho);
+
+    const status = texto(req.body?.status) || 'Ativo';
 
     const cpf = somenteNumeros(req.body?.cpf);
     const rg = texto(req.body?.rg);
     const cnh = texto(req.body?.cnh);
-    const cnhCategoria = texto(req.body?.cnhcategoria)?.toUpperCase() || null;
-    const cnhValidade = nullableDate(req.body?.cnhvalidade);
-    const cnhArquivo = texto(req.body?.cnharquivo);
-    const dataNascimento = nullableDate(req.body?.datanascimento);
-    const estadoCivil = texto(req.body?.estadocivil);
-    const telefonePessoal = somenteNumeros(req.body?.telefonepessoal);
-    const emailPessoal = req.body?.emailpessoal ? normalizarEmail(req.body?.emailpessoal) : null;
+
+    const cnhCategoriaBruta = texto(req.body?.cnh_categoria || req.body?.cnhcategoria);
+    const cnh_categoria = cnhCategoriaBruta ? cnhCategoriaBruta.toUpperCase() : null;
+
+    const cnh_validade = nullableDate(req.body?.cnh_validade || req.body?.cnhvalidade);
+    const cnh_arquivo = texto(req.body?.cnh_arquivo || req.body?.cnharquivo);
+    const data_nascimento = nullableDate(req.body?.data_nascimento || req.body?.datanascimento);
+    const estado_civil = texto(req.body?.estado_civil || req.body?.estadocivil);
+    const telefone_pessoal = somenteNumeros(req.body?.telefone_pessoal || req.body?.telefonepessoal);
+
+    const emailPessoalBruto = texto(req.body?.email_pessoal || req.body?.emailpessoal);
+    const email_pessoal = emailPessoalBruto ? normalizarEmail(emailPessoalBruto) : null;
+
     const foto = texto(req.body?.foto);
 
     const apelido = texto(req.body?.apelido);
-    const numeroCalcado = String(req.body?.numerocalcado ?? '').trim() !== '' ? Number(req.body.numerocalcado) : null;
-    const tamanhoCamisa = texto(req.body?.tamanhocamisa)?.toUpperCase() || null;
-    const tamanhoCalca = texto(req.body?.tamanhocalca);
-    const sexo = texto(req.body?.sexo)?.toUpperCase() || null;
-    const temFilhos = texto(req.body?.temfilhos)?.toUpperCase() || 'NÃO';
-    const quantidadeFilhos = temFilhos === 'SIM' && String(req.body?.quantidadefilhos ?? '').trim() !== ''
-      ? Number(req.body.quantidadefilhos)
+    const numero_calcado = String(req.body?.numerocalcado ?? '').trim() !== ''
+      ? Number(req.body?.numerocalcado)
       : null;
-    const filhos = temFilhos === 'SIM' && Array.isArray(req.body?.filhos)
-      ? JSON.stringify(req.body.filhos)
+    const tamanhoCamisaBruto = texto(req.body?.tamanhocamisa || req.body?.tamanho_camisa);
+    const tamanho_camisa = tamanhoCamisaBruto ? tamanhoCamisaBruto.toUpperCase() : null;
+    const tamanho_calca = texto(req.body?.tamanhocalca || req.body?.tamanho_calca);
+
+    const sexoBruto = texto(req.body?.sexo);
+    const sexo = sexoBruto ? sexoBruto.toUpperCase() : null;
+
+    const temFilhosBruto = texto(req.body?.temfilhos || req.body?.tem_filhos);
+    const tem_filhos = temFilhosBruto ? temFilhosBruto.toUpperCase() : 'NAO';
+
+    const quantidade_filhos = tem_filhos === 'SIM' && String(req.body?.quantidadefilhos ?? req.body?.quantidade_filhos ?? '').trim() !== ''
+      ? Number(req.body?.quantidadefilhos ?? req.body?.quantidade_filhos)
+      : null;
+
+    const filhos = tem_filhos === 'SIM'
+      ? JSON.stringify(Array.isArray(req.body?.filhos) ? req.body.filhos : [])
       : null;
 
     if (!nome || !email || !senha || !perfil || !setor || !status) {
@@ -944,8 +891,8 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
       });
     }
 
-    const emailExistente = await pool.query(
-      'SELECT id FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1',
+    const [emailExistente] = await pool.query(
+      `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
       [email]
     );
 
@@ -958,68 +905,83 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
 
     const senhaHash = await bcrypt.hash(senha, 12);
 
-    const result = await pool.query(`
+    const [result] = await pool.query(`
       INSERT INTO SF_USUARIO (
-        nome, EMAIL, senha, telefone, perfil, status, setor,
-        FUNCAO, DATA_ADMISSAO, CENTRO_CUSTO, LOCAL_TRABALHO,
-        CPF, RG, CNH, CNH_CATEGORIA, DATA_NASCIMENTO, ESTADO_CIVIL,
-        TELEFONE_PESSOAL, EMAIL_PESSOAL, CNH_VALIDADE, CNH_ARQUIVO, FOTO,
-        APELIDO, NUMERO_CALCADO, TAMANHO_CAMISA, TAMANHO_CALCA, SEXO,
-        TEM_FILHOS, QUANTIDADE_FILHOS, FILHOS,
+        NOME,
+        EMAIL,
+        SENHA,
+        TELEFONE,
+        PERFIL,
+        SETOR,
+        FUNCAO,
+        DATA_ADMISSAO,
+        CENTRO_CUSTO,
+        LOCAL_TRABALHO,
+        STATUS,
+        CPF,
+        RG,
+        CNH,
+        CNH_CATEGORIA,
+        CNH_VALIDADE,
+        CNH_ARQUIVO,
+        DATA_NASCIMENTO,
+        ESTADO_CIVIL,
+        TELEFONE_PESSOAL,
+        EMAIL_PESSOAL,
+        FOTO,
+        APELIDO,
+        NUMERO_CALCADO,
+        TAMANHO_CAMISA,
+        TAMANHO_CALCA,
+        SEXO,
+        TEM_FILHOS,
+        QUANTIDADE_FILHOS,
+        FILHOS,
         MUST_CHANGE_PASSWORD
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?,
-        1
-      )
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     `, [
       nome,
       email,
       senhaHash,
       telefone || null,
-      perfil || null,
-      status,
-      setor || null,
-
+      perfil,
+      setor,
       funcao || null,
-      dataAdmissao,
-      centroCusto || null,
-      localTrabalho || null,
-
+      data_admissao,
+      centro_custo || null,
+      local_trabalho || null,
+      status,
       cpf || null,
       rg || null,
       cnh || null,
-      cnhCategoria || null,
-      dataNascimento,
-      estadoCivil || null,
-
-      telefonePessoal || null,
-      emailPessoal || null,
-      cnhValidade,
-      cnhArquivo || null,
+      cnh_categoria || null,
+      cnh_validade,
+      cnh_arquivo || null,
+      data_nascimento,
+      estado_civil || null,
+      telefone_pessoal || null,
+      email_pessoal || null,
       foto || null,
-
       apelido || null,
-      Number.isFinite(numeroCalcado) ? numeroCalcado : null,
-      tamanhoCamisa || null,
-      tamanhoCalca || null,
+      Number.isFinite(numero_calcado) ? numero_calcado : null,
+      tamanho_camisa || null,
+      tamanho_calca || null,
       sexo || null,
-
-      temFilhos,
-      Number.isFinite(quantidadeFilhos) ? quantidadeFilhos : null,
+      tem_filhos,
+      Number.isFinite(quantidade_filhos) ? quantidade_filhos : null,
       filhos
     ]);
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
-      item: { id: result.insertId, nome, email }
+      item: {
+        id: result.insertId,
+        nome,
+        email
+      }
     });
   } catch (err) {
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Erro ao cadastrar usuário.',
       error: err.message
@@ -1037,35 +999,53 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     const telefone = somenteNumeros(req.body?.telefone);
     const perfil = texto(req.body?.perfil);
     const setor = titleCaseNome(req.body?.setor);
+
     const funcao = texto(req.body?.funcao);
-    const dataAdmissao = nullableDate(req.body?.dataadmissao);
-    const centroCusto = titleCaseNome(req.body?.localtrabalho || req.body?.centrocusto);
-    const localTrabalho = titleCaseNome(req.body?.unidadetrabalho);
-    const status = texto(req.body?.status || 'Ativo');
+    const data_admissao = nullableDate(req.body?.dataadmissao || req.body?.data_admissao);
+
+    const centro_custo = titleCaseNome(req.body?.localtrabalho || req.body?.local_trabalho || req.body?.centro_custo);
+    const local_trabalho = titleCaseNome(req.body?.unidadetrabalho || req.body?.unidade_trabalho || req.body?.local_trabalho);
+
+    const status = texto(req.body?.status) || 'Ativo';
 
     const cpf = somenteNumeros(req.body?.cpf);
     const rg = texto(req.body?.rg);
     const cnh = texto(req.body?.cnh);
-    const cnhCategoria = texto(req.body?.cnhcategoria)?.toUpperCase() || null;
-    const cnhValidade = nullableDate(req.body?.cnhvalidade);
-    const cnhArquivo = req.body?.cnharquivo;
-    const dataNascimento = nullableDate(req.body?.datanascimento);
-    const estadoCivil = texto(req.body?.estadocivil);
-    const telefonePessoal = somenteNumeros(req.body?.telefonepessoal);
-    const emailPessoal = texto(req.body?.emailpessoal) ? normalizarEmail(req.body?.emailpessoal) : null;
+
+    const cnhCategoriaBruta = texto(req.body?.cnh_categoria || req.body?.cnhcategoria);
+    const cnh_categoria = cnhCategoriaBruta ? cnhCategoriaBruta.toUpperCase() : null;
+
+    const cnh_validade = nullableDate(req.body?.cnh_validade || req.body?.cnhvalidade);
+    const cnh_arquivo = req.body?.cnh_arquivo ?? req.body?.cnharquivo;
+    const data_nascimento = nullableDate(req.body?.data_nascimento || req.body?.datanascimento);
+    const estado_civil = texto(req.body?.estado_civil || req.body?.estadocivil);
+    const telefone_pessoal = somenteNumeros(req.body?.telefone_pessoal || req.body?.telefonepessoal);
+
+    const email_pessoal_bruto = req.body?.email_pessoal ?? req.body?.emailpessoal;
+    const email_pessoal = texto(email_pessoal_bruto) ? normalizarEmail(email_pessoal_bruto) : null;
+
     const foto = req.body?.foto;
 
     const apelido = texto(req.body?.apelido);
-    const numeroCalcado = String(req.body?.numerocalcado ?? '').trim() !== '' ? Number(req.body.numerocalcado) : null;
-    const tamanhoCamisa = texto(req.body?.tamanhocamisa)?.toUpperCase() || null;
-    const tamanhoCalca = texto(req.body?.tamanhocalca);
-    const sexo = texto(req.body?.sexo)?.toUpperCase() || null;
-    const temFilhos = texto(req.body?.temfilhos)?.toUpperCase() || 'NÃO';
-    const quantidadeFilhos = temFilhos === 'SIM' && String(req.body?.quantidadefilhos ?? '').trim() !== ''
-      ? Number(req.body.quantidadefilhos)
+    const numero_calcado = String(req.body?.numerocalcado ?? '').trim() !== ''
+      ? Number(req.body?.numerocalcado)
       : null;
-    const filhos = temFilhos === 'SIM' && Array.isArray(req.body?.filhos)
-      ? JSON.stringify(req.body.filhos)
+    const tamanhoCamisaBruto = texto(req.body?.tamanhocamisa || req.body?.tamanho_camisa);
+    const tamanho_camisa = tamanhoCamisaBruto ? tamanhoCamisaBruto.toUpperCase() : null;
+    const tamanho_calca = texto(req.body?.tamanhocalca || req.body?.tamanho_calca);
+
+    const sexoBruto = texto(req.body?.sexo);
+    const sexo = sexoBruto ? sexoBruto.toUpperCase() : null;
+
+    const temFilhosBruto = texto(req.body?.temfilhos || req.body?.tem_filhos);
+    const tem_filhos = temFilhosBruto ? temFilhosBruto.toUpperCase() : 'NAO';
+
+    const quantidade_filhos = tem_filhos === 'SIM' && String(req.body?.quantidadefilhos ?? req.body?.quantidade_filhos ?? '').trim() !== ''
+      ? Number(req.body?.quantidadefilhos ?? req.body?.quantidade_filhos)
+      : null;
+
+    const filhos = tem_filhos === 'SIM'
+      ? JSON.stringify(Array.isArray(req.body?.filhos) ? req.body.filhos : [])
       : null;
 
     if (!nome || !email || !perfil || !setor || !status) {
@@ -1075,22 +1055,19 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
       });
     }
 
-    const rows = await pool.query(
-      'SELECT id, FOTO, CNH_ARQUIVO FROM SF_USUARIO WHERE id = ? LIMIT 1',
+    const [rows] = await pool.query(
+      `SELECT ID, FOTO, CNH_ARQUIVO FROM SF_USUARIO WHERE ID = ? LIMIT 1`,
       [id]
     );
 
     if (!rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuário não encontrado.'
-      });
+      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
     }
 
     const atual = rows[0];
 
-    const emailExistente = await pool.query(
-      'SELECT id FROM SF_USUARIO WHERE EMAIL = ? AND id <> ? LIMIT 1',
+    const [emailExistente] = await pool.query(
+      `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? AND ID <> ? LIMIT 1`,
       [email, id]
     );
 
@@ -1106,93 +1083,232 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     else if (typeof foto === 'string' && foto.trim() !== '') fotoFinal = foto.trim();
 
     let cnhArquivoFinal = atual.CNH_ARQUIVO ?? null;
-    if (cnhArquivo === null) cnhArquivoFinal = null;
-    else if (typeof cnhArquivo === 'string' && cnhArquivo.trim() !== '') cnhArquivoFinal = cnhArquivo.trim();
+    if (cnh_arquivo === null) cnhArquivoFinal = null;
+    else if (typeof cnh_arquivo === 'string' && cnh_arquivo.trim() !== '') cnhArquivoFinal = cnh_arquivo.trim();
 
-    const result = await pool.query(`
-      UPDATE SF_USUARIO SET
-        nome = ?,
-        EMAIL = ?,
-        telefone = ?,
-        perfil = ?,
-        status = ?,
-        setor = ?,
-        FUNCAO = ?,
-        DATA_ADMISSAO = ?,
-        CENTRO_CUSTO = ?,
-        LOCAL_TRABALHO = ?,
-        CPF = ?,
-        RG = ?,
-        CNH = ?,
-        CNH_CATEGORIA = ?,
-        DATA_NASCIMENTO = ?,
-        ESTADO_CIVIL = ?,
-        TELEFONE_PESSOAL = ?,
-        EMAIL_PESSOAL = ?,
-        CNH_VALIDADE = ?,
-        CNH_ARQUIVO = ?,
-        FOTO = ?,
-        APELIDO = ?,
-        NUMERO_CALCADO = ?,
-        TAMANHO_CAMISA = ?,
-        TAMANHO_CALCA = ?,
-        SEXO = ?,
-        TEM_FILHOS = ?,
-        QUANTIDADE_FILHOS = ?,
-        FILHOS = ?
-      WHERE id = ?
+    const [result] = await pool.query(`
+      UPDATE SF_USUARIO
+         SET NOME = ?,
+             EMAIL = ?,
+             TELEFONE = ?,
+             PERFIL = ?,
+             SETOR = ?,
+             FUNCAO = ?,
+             DATA_ADMISSAO = ?,
+             CENTRO_CUSTO = ?,
+             LOCAL_TRABALHO = ?,
+             STATUS = ?,
+             CPF = ?,
+             RG = ?,
+             CNH = ?,
+             CNH_CATEGORIA = ?,
+             CNH_VALIDADE = ?,
+             CNH_ARQUIVO = ?,
+             DATA_NASCIMENTO = ?,
+             ESTADO_CIVIL = ?,
+             TELEFONE_PESSOAL = ?,
+             EMAIL_PESSOAL = ?,
+             FOTO = ?,
+             APELIDO = ?,
+             NUMERO_CALCADO = ?,
+             TAMANHO_CAMISA = ?,
+             TAMANHO_CALCA = ?,
+             SEXO = ?,
+             TEM_FILHOS = ?,
+             QUANTIDADE_FILHOS = ?,
+             FILHOS = ?
+       WHERE ID = ?
     `, [
       nome,
       email,
       telefone || null,
-      perfil || null,
-      status,
-      setor || null,
+      perfil,
+      setor,
       funcao || null,
-      dataAdmissao,
-      centroCusto || null,
-      localTrabalho || null,
+      data_admissao,
+      centro_custo || null,
+      local_trabalho || null,
+      status,
       cpf || null,
       rg || null,
       cnh || null,
-      cnhCategoria || null,
-      dataNascimento,
-      estadoCivil || null,
-      telefonePessoal || null,
-      emailPessoal || null,
-      cnhValidade,
+      cnh_categoria || null,
+      cnh_validade,
       cnhArquivoFinal,
+      data_nascimento,
+      estado_civil || null,
+      telefone_pessoal || null,
+      email_pessoal || null,
       fotoFinal,
       apelido || null,
-      Number.isFinite(numeroCalcado) ? numeroCalcado : null,
-      tamanhoCamisa || null,
-      tamanhoCalca || null,
+      Number.isFinite(numero_calcado) ? numero_calcado : null,
+      tamanho_camisa || null,
+      tamanho_calca || null,
       sexo || null,
-      temFilhos,
-      Number.isFinite(quantidadeFilhos) ? quantidadeFilhos : null,
+      tem_filhos,
+      Number.isFinite(quantidade_filhos) ? quantidade_filhos : null,
       filhos,
       id
     ]);
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuário não encontrado.'
-      });
+      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
     }
 
-    return res.json({
-      success: true,
-      message: 'Usuário atualizado com sucesso.'
-    });
+    if (foto === null && atual.FOTO) {
+      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
+      if (nomeArq) await apagarArquivoSeExistir(path.join(PASTAFOTOUSUARIO, nomeArq));
+    }
+
+    if (typeof foto === 'string' && foto.trim() && atual.FOTO && atual.FOTO !== foto.trim()) {
+      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
+      if (nomeArq) await apagarArquivoSeExistir(path.join(PASTAFOTOUSUARIO, nomeArq));
+    }
+
+    if (cnh_arquivo === null && atual.CNH_ARQUIVO) {
+      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.CNH_ARQUIVO);
+      if (nomeArq) await apagarArquivoSeExistir(path.join(PASTACNHUSUARIO, nomeArq));
+    }
+
+    if (typeof cnh_arquivo === 'string' && cnh_arquivo.trim() && atual.CNH_ARQUIVO && atual.CNH_ARQUIVO !== cnh_arquivo.trim()) {
+      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.CNH_ARQUIVO);
+      if (nomeArq) await apagarArquivoSeExistir(path.join(PASTACNHUSUARIO, nomeArq));
+    }
+
+    res.json({ success: true, message: 'Usuário atualizado com sucesso.' });
   } catch (err) {
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Erro ao atualizar usuário.',
       error: err.message
     });
   }
 });
+
+
+app.get('/api/gestao-usuarios', async (req, res) => {
+  try {
+    const busca = texto(req.query?.q);
+
+    let sql = `
+      SELECT
+        ID,
+        NOME,
+        EMAIL,
+        TELEFONE,
+        PERFIL,
+        SETOR,
+        FUNCAO,
+        DATA_ADMISSAO AS DATAADMISSAO,
+        CENTRO_CUSTO AS LOCALTRABALHO,
+        LOCAL_TRABALHO AS UNIDADETRABALHO,
+        STATUS,
+        CPF,
+        RG,
+        CNH,
+        CNH_CATEGORIA AS CNHCATEGORIA,
+        CNH_VALIDADE AS CNHVALIDADE,
+        CNH_ARQUIVO AS CNHARQUIVO,
+        DATA_NASCIMENTO AS DATANASCIMENTO,
+        ESTADO_CIVIL AS ESTADOCIVIL,
+        TELEFONE_PESSOAL AS TELEFONEPESSOAL,
+        EMAIL_PESSOAL AS EMAILPESSOAL,
+        FOTO,
+        APELIDO,
+        NUMERO_CALCADO AS NUMEROCALCADO,
+        TAMANHO_CAMISA AS TAMANHOCAMISA,
+        TAMANHO_CALCA AS TAMANHOCALCA,
+        SEXO,
+        TEM_FILHOS AS TEMFILHOS,
+        QUANTIDADE_FILHOS AS QUANTIDADEFILHOS,
+        FILHOS
+      FROM SF_USUARIO
+    `;
+
+    const params = [];
+
+    if (busca) {
+      sql += `
+        WHERE
+          NOME LIKE ?
+          OR EMAIL LIKE ?
+          OR PERFIL LIKE ?
+          OR SETOR LIKE ?
+      `;
+      const like = `%${busca}%`;
+      params.push(like, like, like, like);
+    }
+
+    sql += ` ORDER BY NOME ASC`;
+
+    const [rows] = await pool.query(sql, params);
+    res.json({ success: true, items: rows });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar usuários.',
+      error: err.message
+    });
+  }
+});
+
+
+app.get('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    const [rows] = await pool.query(
+      `SELECT
+         ID,
+         NOME,
+         EMAIL,
+         TELEFONE,
+         PERFIL,
+         SETOR,
+         FUNCAO,
+         DATA_ADMISSAO AS DATAADMISSAO,
+         CENTRO_CUSTO AS LOCALTRABALHO,
+         LOCAL_TRABALHO AS UNIDADETRABALHO,
+         STATUS,
+         CPF,
+         RG,
+         CNH,
+         CNH_CATEGORIA AS CNHCATEGORIA,
+         CNH_VALIDADE AS CNHVALIDADE,
+         CNH_ARQUIVO AS CNHARQUIVO,
+         DATA_NASCIMENTO AS DATANASCIMENTO,
+         ESTADO_CIVIL AS ESTADOCIVIL,
+         TELEFONE_PESSOAL AS TELEFONEPESSOAL,
+         EMAIL_PESSOAL AS EMAILPESSOAL,
+         FOTO,
+         APELIDO,
+         NUMERO_CALCADO AS NUMEROCALCADO,
+         TAMANHO_CAMISA AS TAMANHOCAMISA,
+         TAMANHO_CALCA AS TAMANHOCALCA,
+         SEXO,
+         TEM_FILHOS AS TEMFILHOS,
+         QUANTIDADE_FILHOS AS QUANTIDADEFILHOS,
+         FILHOS
+       FROM SF_USUARIO
+       WHERE ID = ?
+       LIMIT 1`,
+      [id]
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
+    }
+
+    res.json({ success: true, item: rows[0] });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar usuário.',
+      error: err.message
+    });
+  }
+});
+
 
 
 app.get('/api/setores', async (req, res) => {
