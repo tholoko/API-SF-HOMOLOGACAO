@@ -1305,6 +1305,95 @@ app.delete('/api/gestao-usuarios/foto/:nome', async (req, res) => {
   }
 });
 
+app.get('/api/gestao-usuarios-funcoes', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT ID, NOME
+      FROM SF_FUNCAO
+      WHERE NOME IS NOT NULL AND NOME <> ''
+      ORDER BY NOME ASC
+    `);
+
+    return res.json({ success: true, items: rows });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar funções.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/gestao-usuarios-funcoes', async (req, res) => {
+  try {
+    const nome = titleCaseNome(req.body?.nome);
+    if (!nome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome da função é obrigatório.'
+      });
+    }
+
+    const [r] = await pool.query(`INSERT INTO SF_FUNCAO (NOME) VALUES (?)`, [nome]);
+
+    return res.status(201).json({
+      success: true,
+      item: { id: r.insertId, nome }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao adicionar função.',
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT ID, NOME
+      FROM SF_LOCAL_TRABALHO
+      WHERE NOME IS NOT NULL AND NOME <> ''
+      ORDER BY NOME ASC
+    `);
+
+    return res.json({ success: true, items: rows });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar unidades de trabalho.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
+  try {
+    const nome = titleCaseNome(req.body?.nome);
+    if (!nome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome da unidade de trabalho é obrigatório.'
+      });
+    }
+
+    const [r] = await pool.query(`INSERT INTO SF_LOCAL_TRABALHO (NOME) VALUES (?)`, [nome]);
+
+    return res.status(201).json({
+      success: true,
+      item: { id: r.insertId, nome }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao adicionar unidade de trabalho.',
+      error: err.message
+    });
+  }
+});
+
+
 // ======================================================
 // GESTÃO DE USUÁRIOS - APOIO CNH
 // ======================================================
@@ -1664,7 +1753,6 @@ app.post("/api/marketing/imagens", upload.array("files", 20), async (req, res) =
     });
   }
 });
-
 
 // REMOVER
 app.delete("/api/marketing/imagens/:nome", async (req, res) => {
@@ -2705,7 +2793,6 @@ app.post('/api/estoque/produtos-amarracao/adicionar', async (req, res) => {
   }
 });
 
-
 app.put('/api/estoque/produtos-amarracao/:id', async (req, res) => {
   const conn = await pool.getConnection();
 
@@ -3113,7 +3200,6 @@ app.post('/api/estoque/importacao-pdf/confirmar', async (req, res) => {
   }
 });
 
-
 app.get('/api/locais-almoxarifado', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -3245,7 +3331,6 @@ app.get('/api/estoque/controle/escritorio', async (req, res) => {
     if (conn) conn.release();
   }
 });
-
 
 app.get('/api/estoque/produto-entrada/:produtoId', async (req, res) => {
   const conn = await pool.getConnection();
@@ -4850,7 +4935,6 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
   }
 });
 
-
 app.get('/api/locais-centrocusto', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -6425,6 +6509,8 @@ app.get('/api/clima-links', async (req, res) => {
     res.status(500).json({ success: false, message: 'Erro ao listar links de clima.', error: err.message });
   }
 });
+
+// RESERVAR CARRO
 
 app.get('/api/local-trabalho', async (req, res) => {
   let conn;
