@@ -672,7 +672,7 @@ function nullableDate(v) {
 }
 
 
-app.get('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
+app.get('/api/gestao-usuarios-centro-custo', async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT ID, NOME
@@ -692,7 +692,7 @@ app.get('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
   }
 });
 
-app.post('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
+app.post('/api/gestao-usuarios-centro-custo', async (req, res) => {
   try {
     const nome = titleCaseNome(req.body?.nome);
 
