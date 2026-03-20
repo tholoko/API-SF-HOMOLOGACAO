@@ -1235,7 +1235,6 @@ app.get('/api/gestao-usuarios', async (req, res) => {
   }
 });
 
-
 app.get('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -1291,8 +1290,6 @@ app.get('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     });
   }
 });
-
-
 
 app.get('/api/setores', async (req, res) => {
   try {
@@ -6658,6 +6655,16 @@ app.get('/api/local-trabalho', async (req, res) => {
   }
 });
 
+function datetimeLocalToMysql(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+
+  if (!m) return null;
+
+  const [, ano, mes, dia, hora, minuto, segundo = '00'] = m;
+  return `${ano}-${mes}-${dia} ${hora}:${minuto}:${segundo}`;
+}
+
 app.post('/api/reservas-carro', async (req, res) => {
   let conn;
 
@@ -6686,7 +6693,17 @@ app.post('/api/reservas-carro', async (req, res) => {
       });
     }
 
-    if (new Date(previsaoDevolucao) <= new Date(dataNecessaria)) {
+    const dataNecessariaMysql = datetimeLocalToMysql(dataNecessaria);
+    const previsaoDevolucaoMysql = datetimeLocalToMysql(previsaoDevolucao);
+
+    if (!dataNecessariaMysql || !previsaoDevolucaoMysql) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data necessária ou previsão de devolução inválida.'
+      });
+    }
+
+    if (previsaoDevolucaoMysql <= dataNecessariaMysql) {
       return res.status(400).json({
         success: false,
         message: 'A previsão de devolução deve ser maior que a data necessária.'
@@ -6694,6 +6711,7 @@ app.post('/api/reservas-carro', async (req, res) => {
     }
 
     conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
     await conn.beginTransaction();
 
     const [insertReserva] = await conn.query(`
@@ -6707,8 +6725,8 @@ app.post('/api/reservas-carro', async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?)
     `, [
       String(tipoVeiculo).trim().toUpperCase(),
-      dataNecessaria,
-      previsaoDevolucao,
+      dataNecessariaMysql,
+      previsaoDevolucaoMysql,
       String(urgencia).trim().toUpperCase(),
       observacoes ? String(observacoes).trim() : null,
       String(usuarioSolicitante).trim()
@@ -6754,6 +6772,7 @@ app.post('/api/reservas-carro', async (req, res) => {
     if (conn) conn.release();
   }
 });
+
 
 app.get('/api/reservas-carro', async (req, res) => {
   let conn;
