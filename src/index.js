@@ -6426,6 +6426,341 @@ app.get('/api/clima-links', async (req, res) => {
   }
 });
 
+app.get('/api/local-trabalho', async (req, res) => {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT
+        id,
+        nome
+      FROM SF_LOCAL_TRABALHO
+      ORDER BY nome
+    `);
+
+    return res.json({
+      success: true,
+      items: rows
+    });
+
+  } catch (err) {
+    console.error('Erro ao listar locais de trabalho:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar locais de trabalho.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/reservas-carro', async (req, res) => {
+  let conn;
+
+  try {
+    const {
+      tipoVeiculo,
+      dataNecessaria,
+      previsaoDevolucao,
+      destinos,
+      observacoes,
+      urgencia,
+      usuarioSolicitante
+    } = req.body || {};
+
+    if (!tipoVeiculo || !dataNecessaria || !previsaoDevolucao || !urgencia || !usuarioSolicitante) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe tipoVeiculo, dataNecessaria, previsaoDevolucao, urgencia e usuarioSolicitante.'
+      });
+    }
+
+    if (!Array.isArray(destinos) || !destinos.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione pelo menos um destino.'
+      });
+    }
+
+    if (new Date(previsaoDevolucao) <= new Date(dataNecessaria)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A previsão de devolução deve ser maior que a data necessária.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [insertReserva] = await conn.query(`
+      INSERT INTO SF_RESERVA_CARRO (
+        tipo_veiculo,
+        data_necessaria,
+        previsao_devolucao,
+        urgencia,
+        observacoes,
+        usuario_solicitante
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      String(tipoVeiculo).trim().toUpperCase(),
+      dataNecessaria,
+      previsaoDevolucao,
+      String(urgencia).trim().toUpperCase(),
+      observacoes ? String(observacoes).trim() : null,
+      String(usuarioSolicitante).trim()
+    ]);
+
+    const reservaId = Number(insertReserva.insertId);
+
+    for (const idDestinoRaw of destinos) {
+      const idDestino = Number(idDestinoRaw);
+
+      if (!idDestino) {
+        throw new Error('Foi encontrado um destino inválido na solicitação.');
+      }
+
+      await conn.query(`
+        INSERT INTO SF_RESERVA_CARRO_DESTINO (
+          reserva_id,
+          local_trabalho_id
+        ) VALUES (?, ?)
+      `, [reservaId, idDestino]);
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Solicitação de reserva de carro salva com sucesso.',
+      reservaId
+    });
+
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao salvar reserva de carro:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao salvar reserva de carro.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/reservas-carro', async (req, res) => {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT
+        rc.id,
+        rc.tipo_veiculo,
+        rc.data_necessaria,
+        rc.previsao_devolucao,
+        rc.urgencia,
+        rc.observacoes,
+        rc.usuario_solicitante,
+        rc.data_solicitacao,
+        rc.status_solicitacao,
+        GROUP_CONCAT(lt.nome ORDER BY lt.nome SEPARATOR ' | ') AS destinos
+      FROM SF_RESERVA_CARRO rc
+      LEFT JOIN SF_RESERVA_CARRO_DESTINO rcd
+        ON rcd.reserva_id = rc.id
+      LEFT JOIN SF_LOCAL_TRABALHO lt
+        ON lt.id = rcd.local_trabalho_id
+      GROUP BY
+        rc.id,
+        rc.tipo_veiculo,
+        rc.data_necessaria,
+        rc.previsao_devolucao,
+        rc.urgencia,
+        rc.observacoes,
+        rc.usuario_solicitante,
+        rc.data_solicitacao,
+        rc.status_solicitacao
+      ORDER BY rc.id DESC
+    `);
+
+    return res.json({
+      success: true,
+      items: rows
+    });
+
+  } catch (err) {
+    console.error('Erro ao listar reservas de carro:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar reservas de carro.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/reservas-carro/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [rowsReserva] = await conn.query(`
+      SELECT
+        id,
+        tipo_veiculo,
+        data_necessaria,
+        previsao_devolucao,
+        urgencia,
+        observacoes,
+        usuario_solicitante,
+        data_solicitacao,
+        status_solicitacao
+      FROM SF_RESERVA_CARRO
+      WHERE id = ?
+      LIMIT 1
+    `, [idReserva]);
+
+    const reserva = rowsReserva?.[0];
+    if (!reserva) {
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    const [rowsDestinos] = await conn.query(`
+      SELECT
+        lt.id,
+        lt.nome
+      FROM SF_RESERVA_CARRO_DESTINO rcd
+      INNER JOIN SF_LOCAL_TRABALHO lt
+        ON lt.id = rcd.local_trabalho_id
+      WHERE rcd.reserva_id = ?
+      ORDER BY lt.nome
+    `, [idReserva]);
+
+    return res.json({
+      success: true,
+      item: {
+        ...reserva,
+        destinos: rowsDestinos
+      }
+    });
+
+  } catch (err) {
+    console.error('Erro ao buscar reserva de carro:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar reserva de carro.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/reservas-carro/:id/status', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+    const status = String(req.body?.status || '').trim().toUpperCase();
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    const statusPermitidos = ['PENDENTE', 'APROVADA', 'RECUSADA', 'CANCELADA', 'CONCLUIDA'];
+    if (!statusPermitidos.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status inválido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [result] = await conn.query(`
+      UPDATE SF_RESERVA_CARRO
+      SET status_solicitacao = ?
+      WHERE id = ?
+    `, [status, idReserva]);
+
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Status da reserva atualizado com sucesso.'
+    });
+
+  } catch (err) {
+    console.error('Erro ao atualizar status da reserva:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar status da reserva.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/clima-links', async (req, res) => {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT id, titulo, url, icone
+      FROM SF_CLIMA_LINKS
+      ORDER BY id
+    `);
+
+    return res.json({
+      success: true,
+      items: rows
+    });
+
+  } catch (err) {
+    console.error('Erro api/clima-links:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar links de clima.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+
 
 // =====================
 // Inicia servidor (sempre por último)
