@@ -6760,6 +6760,70 @@ app.get('/api/clima-links', async (req, res) => {
   }
 });
 
+app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
+  let conn;
+
+  try {
+    const usuarioSolicitante = String(req.params.usuarioSolicitante || '').trim();
+
+    if (!usuarioSolicitante) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o usuário solicitante.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT
+        rc.id,
+        rc.tipo_veiculo,
+        rc.data_necessaria,
+        rc.previsao_devolucao,
+        rc.urgencia,
+        rc.observacoes,
+        rc.usuario_solicitante,
+        rc.data_solicitacao,
+        rc.status_solicitacao,
+        GROUP_CONCAT(lt.nome ORDER BY lt.nome SEPARATOR ' | ') AS destinos
+      FROM SF_RESERVA_CARRO rc
+      LEFT JOIN SF_RESERVA_CARRO_DESTINO rcd
+        ON rcd.reserva_id = rc.id
+      LEFT JOIN SF_LOCAL_TRABALHO lt
+        ON lt.id = rcd.local_trabalho_id
+      WHERE UPPER(TRIM(rc.usuario_solicitante)) = UPPER(TRIM(?))
+      GROUP BY
+        rc.id,
+        rc.tipo_veiculo,
+        rc.data_necessaria,
+        rc.previsao_devolucao,
+        rc.urgencia,
+        rc.observacoes,
+        rc.usuario_solicitante,
+        rc.data_solicitacao,
+        rc.status_solicitacao
+      ORDER BY rc.id DESC
+    `, [usuarioSolicitante]);
+
+    return res.json({
+      success: true,
+      items: rows
+    });
+
+  } catch (err) {
+    console.error('Erro ao listar agendamentos do usuário:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar agendamentos do usuário.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+
 
 
 // =====================
