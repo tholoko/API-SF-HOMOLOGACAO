@@ -81,30 +81,14 @@ app.get('/health', async (req, res) => {
 app.get('/debug', (req, res) => {
   res.json({
     mysqlVars: {
-      host: {
-        exists: !!process.env.MYSQLHOST,
-        value: process.env.MYSQLHOST || null
-      },
-      port: {
-        exists: !!process.env.MYSQLPORT,
-        value: process.env.MYSQLPORT || null
-      },
-      user: {
-        exists: !!process.env.MYSQLUSER,
-        value: process.env.MYSQLUSER || null
-      },
-      pass: {
-        exists: !!process.env.MYSQLPASSWORD,
-        value: process.env.MYSQLPASSWORD ? '***OCULTA***' : null
-      },
-      db: {
-        exists: !!process.env.MYSQLDATABASE,
-        value: process.env.MYSQLDATABASE || null
-      }
+      host: process.env.MYSQLHOST ? 'OK' : 'MISSING',
+      port: process.env.MYSQLPORT,
+      user: process.env.MYSQLUSER ? 'OK' : 'MISSING',
+      pass: process.env.MYSQLPASSWORD ? 'OK' : 'MISSING',
+      db: process.env.MYSQLDATABASE ? 'OK' : 'MISSING'
     }
   });
 });
-
 
 // =====================
 // API Login
@@ -692,7 +676,7 @@ app.get('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT ID, NOME
-         FROM SF_LOCAL_TRABALHO
+         FROM SF_CENTRO_CUSTO
         WHERE NOME IS NOT NULL
           AND NOME <> ''
         ORDER BY NOME ASC`
@@ -720,7 +704,7 @@ app.post('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
     }
 
     const [r] = await pool.query(
-      `INSERT INTO SF_LOCAL_TRABALHO (NOME)
+      `INSERT INTO SF_CENTRO_CUSTO (NOME)
        VALUES (?)`,
       [nome]
     );
@@ -1193,93 +1177,6 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     });
   }
 });
-
-app.patch('/api/gestao-usuarios/:id(\\d+)/foto', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const foto = req.body?.foto;
-
-    if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID de usuário inválido.'
-      });
-    }
-
-    const [rows] = await pool.query(
-      `SELECT ID, FOTO FROM SF_USUARIO WHERE ID = ? LIMIT 1`,
-      [id]
-    );
-
-    if (!rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuário não encontrado.'
-      });
-    }
-
-    const atual = rows[0];
-    let fotoFinal = atual.FOTO ?? null;
-
-    if (foto === null) {
-      fotoFinal = null;
-    } else if (typeof foto === 'string' && foto.trim() !== '') {
-      fotoFinal = foto.trim();
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe uma foto válida ou null para remover.'
-      });
-    }
-
-    const [result] = await pool.query(
-      `UPDATE SF_USUARIO SET FOTO = ? WHERE ID = ?`,
-      [fotoFinal, id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuário não encontrado.'
-      });
-    }
-
-    if (foto === null && atual.FOTO) {
-      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
-      if (nomeArq) {
-        await apagarArquivoSeExistir(path.join(PASTA_FOTO_USUARIO, nomeArq));
-      }
-    }
-
-    if (
-      typeof foto === 'string' &&
-      foto.trim() &&
-      atual.FOTO &&
-      atual.FOTO !== foto.trim()
-    ) {
-      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
-      if (nomeArq) {
-        await apagarArquivoSeExistir(path.join(PASTA_FOTO_USUARIO, nomeArq));
-      }
-    }
-
-    return res.json({
-      success: true,
-      message: 'Foto do usuário atualizada com sucesso.',
-      item: {
-        id,
-        foto: fotoFinal
-      }
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao atualizar foto do usuário.',
-      error: err.message
-    });
-  }
-});
-
 
 
 app.get('/api/setores', async (req, res) => {
@@ -3617,7 +3514,7 @@ async function validarLocalCentrocusto(conn, idLocal) {
     SELECT
       l.ID,
       l.NOME
-    FROM SF_LOCAL_TRABALHO l
+    FROM SF_CENTRO_CUSTO l
     WHERE l.ID = ?
     LIMIT 1
     `,
@@ -3895,7 +3792,7 @@ app.get('/api/estoque/transferencias', async (req, res) => {
         ON p.id = t.ID_PRODUTO
       LEFT JOIN SF_LOCAL_ALMOXARIFADO lo
         ON lo.ID = t.ID_LOCAL_ORIGEM
-      LEFT JOIN SF_LOCAL_TRABALHO ld
+      LEFT JOIN SF_CENTRO_CUSTO ld
         ON ld.ID = t.ID_LOCAL_DESTINO
       WHERE t.ID_PRODUTO = ?
         AND t.ID_LOCAL_ORIGEM = ?
@@ -4468,7 +4365,7 @@ app.post('/api/estoque/transferencias/:id/recebimento', async (req, res) => {
         t.*,
         ld.NOME AS LOCAL_DESTINO_NOME
       FROM SF_ESTOQUE_TRANSFERENCIA t
-      LEFT JOIN SF_LOCAL_TRABALHO ld
+      LEFT JOIN SF_CENTRO_CUSTO ld
         ON ld.ID = t.ID_LOCAL_DESTINO
       WHERE t.ID = ?
       LIMIT 1
@@ -4635,7 +4532,7 @@ app.post('/api/estoque/transferencias/:id/recusa', async (req, res) => {
         t.*,
         ld.NOME AS LOCAL_DESTINO_NOME
       FROM SF_ESTOQUE_TRANSFERENCIA t
-      LEFT JOIN SF_LOCAL_TRABALHO ld
+      LEFT JOIN SF_CENTRO_CUSTO ld
         ON ld.ID = t.ID_LOCAL_DESTINO
       WHERE t.ID = ?
       LIMIT 1
@@ -4817,7 +4714,7 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
     const [rowsCentro] = await conn.query(
       `
       SELECT ID, NOME
-      FROM SF_LOCAL_TRABALHO
+      FROM SF_CENTRO_CUSTO
       WHERE UPPER(TRIM(NOME)) = ?
       LIMIT 1
       `,
@@ -4863,9 +4760,9 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
         ON p.id = t.ID_PRODUTO
       LEFT JOIN SF_LOCAL_ALMOXARIFADO loa
         ON loa.ID = t.ID_LOCAL_ORIGEM
-      LEFT JOIN SF_LOCAL_TRABALHO lot
+      LEFT JOIN SF_CENTRO_CUSTO lot
         ON lot.ID = t.ID_LOCAL_ORIGEM
-      LEFT JOIN SF_LOCAL_TRABALHO ld
+      LEFT JOIN SF_CENTRO_CUSTO ld
         ON ld.ID = t.ID_LOCAL_DESTINO
       WHERE t.ID_LOCAL_DESTINO = ?
         AND t.STATUS_TRANSFERENCIA IN ('AGUARDANDO_RECEBIMENTO', 'EM_TRANSITO')
@@ -4920,7 +4817,7 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
       ) pend ON pend.ID_PRODUTO = p.id
       CROSS JOIN (
         SELECT ID, NOME
-        FROM SF_LOCAL_TRABALHO
+        FROM SF_CENTRO_CUSTO
         WHERE ID = ?
       ) centro
       WHERE EXISTS (
@@ -4958,7 +4855,7 @@ app.get('/api/locais-centrocusto', async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT ID, NOME
-      FROM SF_LOCAL_TRABALHO
+      FROM SF_CENTRO_CUSTO
       ORDER BY NOME ASC
     `);
 
@@ -4978,7 +4875,7 @@ app.post('/api/locais-centrocusto', async (req, res) => {
     }
 
     const [existente] = await pool.query(
-      `SELECT ID FROM SF_LOCAL_TRABALHO WHERE UPPER(NOME) = ? LIMIT 1`,
+      `SELECT ID FROM SF_CENTRO_CUSTO WHERE UPPER(NOME) = ? LIMIT 1`,
       [nome]
     );
 
@@ -4987,7 +4884,7 @@ app.post('/api/locais-centrocusto', async (req, res) => {
     }
 
     const [result] = await pool.query(
-      `INSERT INTO SF_LOCAL_TRABALHO (NOME) VALUES (?)`,
+      `INSERT INTO SF_CENTRO_CUSTO (NOME) VALUES (?)`,
       [nome]
     );
 
@@ -5159,9 +5056,9 @@ app.get('/api/estoque/centro-custo/transferencias', async (req, res) => {
       FROM SF_ESTOQUE_TRANSFERENCIA t
       INNER JOIN SF_PRODUTOS p
         ON p.id = t.ID_PRODUTO
-      LEFT JOIN SF_LOCAL_TRABALHO lo
+      LEFT JOIN SF_CENTRO_CUSTO lo
         ON lo.ID = t.ID_LOCAL_ORIGEM
-      LEFT JOIN SF_LOCAL_TRABALHO ld
+      LEFT JOIN SF_CENTRO_CUSTO ld
         ON ld.ID = t.ID_LOCAL_DESTINO
       WHERE t.ID_PRODUTO = ?
         AND t.ID_LOCAL_ORIGEM = ?
