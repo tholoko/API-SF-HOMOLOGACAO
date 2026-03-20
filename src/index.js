@@ -198,7 +198,6 @@ app.post('/api/usuarios/primeiro-acesso/senha', async (req, res) => {
 // =====================
 app.get('/api/aniversariantes/mes', async (req, res) => {
   try {
-    console.log('[ANIVERSARIANTES_MES] Iniciando busca dos aniversariantes do mês...');
 
     const result = await pool.query(`
       SELECT
@@ -216,22 +215,14 @@ app.get('/api/aniversariantes/mes', async (req, res) => {
       ORDER BY DAY(DATA_NASCIMENTO) ASC, NOME ASC
     `);
 
-    console.log('[ANIVERSARIANTES_MES] Resultado bruto:', result);
 
     const rows = Array.isArray(result?.[0]) ? result[0] : result;
 
-    console.log('[ANIVERSARIANTES_MES] Linhas extraídas:', rows);
-    console.log('[ANIVERSARIANTES_MES] Total de registros encontrados:', rows.length);
 
     const hoje = new Date();
     const diaHoje = hoje.getDate();
     const mesHoje = hoje.getMonth() + 1;
 
-    console.log('[ANIVERSARIANTES_MES] Hoje é:', {
-      diaHoje,
-      mesHoje,
-      dataIso: hoje.toISOString()
-    });
 
     const items = rows.map((r, index) => {
       const dt = r.DATA_NASCIMENTO ? new Date(r.DATA_NASCIMENTO) : null;
@@ -249,17 +240,8 @@ app.get('/api/aniversariantes/mes', async (req, res) => {
         aniversarioHoje
       };
 
-      console.log(`[ANIVERSARIANTES_MES] Registro ${index + 1}:`, {
-        bruto: r,
-        convertido: item,
-        diaExtraido: dia,
-        mesExtraido: mes
-      });
-
       return item;
     });
-
-    console.log('[ANIVERSARIANTES_MES] Items finais enviados ao front:', items);
 
     return res.json({
       success: true,
@@ -993,7 +975,7 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
 app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
   
   try {
-    console.log(req);
+    console.log(req.body);
     const id = Number(req.params.id);
 
     const nome = titleCaseNome(req.body?.nome);
