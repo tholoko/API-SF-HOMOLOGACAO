@@ -991,7 +991,9 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
 
 
 app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
+  
   try {
+    console.log(req);
     const id = Number(req.params.id);
 
     const nome = titleCaseNome(req.body?.nome);
