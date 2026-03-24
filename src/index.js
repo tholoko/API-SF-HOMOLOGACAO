@@ -1464,7 +1464,7 @@ app.post('/api/gestao-usuarios-funcoes', async (req, res) => {
 app.get('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT ID, NOME, ENDERECO
+      SELECT ID, NOME, ENDERECO, TELEFONE
       FROM SF_LOCAL_TRABALHO
       WHERE NOME IS NOT NULL AND NOME <> ''
       ORDER BY NOME ASC
