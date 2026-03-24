@@ -1464,15 +1464,15 @@ app.post('/api/gestao-usuarios-funcoes', async (req, res) => {
 app.get('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT ID, NOME
+      SELECT ID, NOME, ENDERECO
       FROM SF_LOCAL_TRABALHO
       WHERE NOME IS NOT NULL AND NOME <> ''
       ORDER BY NOME ASC
     `);
 
-    return res.json({ success: true, items: rows });
+    res.json({ success: true, items: rows });
   } catch (err) {
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Erro ao listar unidades de trabalho.',
       error: err.message
@@ -6772,7 +6772,6 @@ app.post('/api/reservas-carro', async (req, res) => {
     if (conn) conn.release();
   }
 });
-
 
 app.get('/api/reservas-carro', async (req, res) => {
   let conn;
