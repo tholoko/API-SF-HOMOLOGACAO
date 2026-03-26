@@ -1814,6 +1814,31 @@ app.get("/api/marketing/imagens", async (req, res) => {
   }
 });
 
+app.patch('/api/marketing/cards/:id/exibido', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ success: false, message: 'ID inválido.' });
+    }
+
+    await pool.query(
+      `UPDATE SFMARKETINGIMAGEM
+       SET ULTIMAEXIBICAOEM = NOW()
+       WHERE ID = ?`,
+      [id]
+    );
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Erro ao marcar card como exibido', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao marcar card como exibido.',
+      error: err.message
+    });
+  }
+});
+
 // UPLOAD (múltiplos) - campo FormData: "files" [web:647]
 app.post("/api/marketing/imagens", upload.array("files", 20), async (req, res) => {
   try {
