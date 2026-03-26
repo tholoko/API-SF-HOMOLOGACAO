@@ -2005,6 +2005,18 @@ app.get('/api/marketing/painel', async (req, res) => {
       return false;
     });
 
+    console.log('[MARKETING/PAINEL] hoje=', hojeStr);
+    console.log('[MARKETING/PAINEL] ativos=', ativos.map(x => ({
+      id: x.ID,
+      titulo: x.TITULO,
+      url: x.URL,
+      inicio: x.DATA_INICIO,
+      fim: x.DATA_FIM,
+      recorrencia: x.RECORRENCIA,
+      apenasUmaVez: x.APENAS_UMA_VEZ,
+      ultimaExibicao: x.ULTIMA_EXIBICAO_EM
+    })));
+
     return res.json({
       success: true,
       items: ativos.map(item => ({
