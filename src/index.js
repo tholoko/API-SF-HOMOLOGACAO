@@ -1875,7 +1875,7 @@ app.post('/api/marketing/cards', upload.single('file'), async (req, res) => {
     const descricao = String(req.body?.descricao || '').trim() || null;
     const card = String(req.body?.card || 'principal').trim();
     const exibirNoPainel = String(req.body?.exibirNoPainel || '1') === '1' ? 1 : 0;
-    const ativo = 1;
+    const ativo = String(req.body?.ativo || '1') === '1' ? 1 : 0;
     const dataInicio = String(req.body?.dataInicio || '').trim() || null;
     const dataFim = String(req.body?.dataFim || '').trim() || null;
     const recorrencia = String(req.body?.recorrencia || 'once').trim();
@@ -1982,6 +1982,138 @@ app.get('/api/marketing/painel', async (req, res) => {
     });
   }
 });
+
+app.get('/api/marketing/cards', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT
+        ID,
+        NOME_ARQUIVO,
+        URL,
+        TITULO,
+        DESCRICAO,
+        CARD,
+        ATIVO,
+        EXIBIR_NO_PAINEL AS EXIBIRNOPAINEL,
+        DATA_INICIO AS DATAINICIO,
+        DATA_FIM AS DATAFIM,
+        RECORRENCIA,
+        APENAS_UMA_VEZ AS APENASUMAVEZ,
+        ORDEM,
+        ULTIMA_EXIBICAO_EM
+      FROM SF_MARKETING_IMAGEM
+      ORDER BY ORDEM ASC, ID DESC
+    `);
+
+    return res.json({
+      success: true,
+      items: rows
+    });
+  } catch (err) {
+    console.error('Erro ao listar cards de marketing:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar cards de marketing.',
+      error: err.message
+    });
+  }
+});
+
+app.put('/api/marketing/cards/:id', upload.single('file'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID inválido.'
+      });
+    }
+
+    const [rows] = await pool.query(`
+      SELECT ID, NOME_ARQUIVO, URL
+      FROM SF_MARKETING_IMAGEM
+      WHERE ID = ?
+      LIMIT 1
+    `, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Card não encontrado.'
+      });
+    }
+
+    const atual = rows[0];
+
+    const titulo = String(req.body?.titulo || '').trim() || null;
+    const descricao = String(req.body?.descricao || '').trim() || null;
+    const card = String(req.body?.card || 'principal').trim();
+    const exibirNoPainel = String(req.body?.exibirNoPainel || '1') === '1' ? 1 : 0;
+    const ativo = String(req.body?.ativo || '1') === '1' ? 1 : 0;
+    const dataInicio = String(req.body?.dataInicio || '').trim() || null;
+    const dataFim = String(req.body?.dataFim || '').trim() || null;
+    const recorrencia = String(req.body?.recorrencia || 'once').trim();
+    const apenasUmaVez = String(req.body?.apenasUmaVez || '0') === '1' ? 1 : 0;
+    const ordem = Number(req.body?.ordem || 0) || 0;
+
+    let nomeArquivo = atual.NOME_ARQUIVO;
+    let url = atual.URL;
+
+    if (req.file) {
+      nomeArquivo = req.file.filename;
+      url = `/anexos/marketing/${encodeURIComponent(req.file.filename)}`;
+    }
+
+    await pool.query(`
+      UPDATE SF_MARKETING_IMAGEM
+      SET
+        NOME_ARQUIVO = ?,
+        URL = ?,
+        TITULO = ?,
+        DESCRICAO = ?,
+        CARD = ?,
+        ATIVO = ?,
+        EXIBIR_NO_PAINEL = ?,
+        DATA_INICIO = ?,
+        DATA_FIM = ?,
+        RECORRENCIA = ?,
+        APENAS_UMA_VEZ = ?,
+        ORDEM = ?
+      WHERE ID = ?
+    `, [
+      nomeArquivo,
+      url,
+      titulo,
+      descricao,
+      card,
+      ativo,
+      exibirNoPainel,
+      dataInicio,
+      dataFim,
+      recorrencia,
+      apenasUmaVez,
+      ordem,
+      id
+    ]);
+
+    return res.json({
+      success: true,
+      item: {
+        id,
+        name: nomeArquivo,
+        url
+      }
+    });
+  } catch (err) {
+    console.error('Erro ao atualizar card de marketing:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar card de marketing.',
+      error: err.message
+    });
+  }
+});
+
 
 
 function normalizarUF(uf) {
