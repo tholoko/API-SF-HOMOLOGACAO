@@ -1967,28 +1967,45 @@ app.get('/api/marketing/painel', async (req, res) => {
     const ativos = rows.filter(item => {
       const inicio = item.DATA_INICIO ? String(item.DATA_INICIO).slice(0, 10) : null;
       const fim = item.DATA_FIM ? String(item.DATA_FIM).slice(0, 10) : null;
-      const rec = String(item.RECORRENCIA || 'once').toLowerCase();
+      const rec = String(item.RECORRENCIA || 'once').toLowerCase().trim();
+      const apenasUmaVez = Number(item.APENAS_UMA_VEZ || 0) === 1;
+      const jaExibido = !!item.ULTIMA_EXIBICAO_EM;
 
       if (inicio && hojeStr < inicio) return false;
       if (fim && hojeStr > fim) return false;
 
-      if (item.APENAS_UMA_VEZ && item.ULTIMA_EXIBICAO_EM) return false;
+      if (rec === 'always') {
+        return true;
+      }
 
-      if (rec === 'always') return true;
-      if (rec === 'daily') return true;
+      if (rec === 'daily') {
+        return !apenasUmaVez || !jaExibido;
+      }
 
-      if (!inicio) return rec === 'once';
+      if (rec === 'once') {
+        if (!inicio) return true;
+        if (hojeStr !== inicio) return false;
+        return !apenasUmaVez || !jaExibido;
+      }
 
-      const [anoI, mesI, diaI] = inicio.split('-').map(Number);
+      if (rec === 'monthly') {
+        if (!inicio) return false;
+        const [, , diaI] = inicio.split('-').map(Number);
+        if (Number(dd) !== diaI) return false;
+        return !apenasUmaVez || !jaExibido;
+      }
 
-      if (rec === 'once') return hojeStr === inicio;
-      if (rec === 'monthly') return Number(dd) === diaI;
-      if (rec === 'yearly') return Number(dd) === diaI && Number(mm) === mesI;
+      if (rec === 'yearly') {
+        if (!inicio) return false;
+        const [, mesI, diaI] = inicio.split('-').map(Number);
+        if (Number(dd) !== diaI || Number(mm) !== mesI) return false;
+        return !apenasUmaVez || !jaExibido;
+      }
 
       return false;
     });
 
-    res.json({
+    return res.json({
       success: true,
       items: ativos.map(item => ({
         id: item.ID,
@@ -1996,17 +2013,19 @@ app.get('/api/marketing/painel', async (req, res) => {
         descricao: item.DESCRICAO,
         card: item.CARD,
         url: item.URL,
-        recorrencia: item.RECORRENCIA
+        recorrencia: item.RECORRENCIA,
+        apenasUmaVez: Number(item.APENAS_UMA_VEZ || 0)
       }))
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao listar cards do painel.',
       error: err.message
     });
   }
 });
+
 
 app.get('/api/marketing/cards', async (req, res) => {
   try {
