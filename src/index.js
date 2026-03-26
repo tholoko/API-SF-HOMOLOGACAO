@@ -867,7 +867,7 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
     if (emailExistente.length > 0) {
       return res.status(409).json({
         success: false,
-        message: 'Já existe usuário com este e-mail.'
+        message: 'Já existe usuário com este CPF cadastrado.'
       });
     }
 
