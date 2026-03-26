@@ -957,7 +957,6 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
   }
 });
 
-
 app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
   
   try {
@@ -1146,7 +1145,6 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     });
   }
 });
-
 
 app.get('/api/gestao-usuarios', async (req, res) => {
   try {
@@ -1866,6 +1864,125 @@ app.delete("/api/marketing/imagens/:nome", async (req, res) => {
     return res.status(500).json({ success: false, message: "Erro ao remover imagem.", error: err.message });
   }
 });
+
+app.post('/api/marketing/cards', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Imagem não enviada.' });
+    }
+
+    const titulo = String(req.body?.titulo || '').trim() || null;
+    const descricao = String(req.body?.descricao || '').trim() || null;
+    const card = String(req.body?.card || 'principal').trim();
+    const exibirNoPainel = String(req.body?.exibirNoPainel || '1') === '1' ? 1 : 0;
+    const ativo = 1;
+    const dataInicio = String(req.body?.dataInicio || '').trim() || null;
+    const dataFim = String(req.body?.dataFim || '').trim() || null;
+    const recorrencia = String(req.body?.recorrencia || 'once').trim();
+    const apenasUmaVez = String(req.body?.apenasUmaVez || '0') === '1' ? 1 : 0;
+    const ordem = Number(req.body?.ordem || 0) || 0;
+
+    const url = `/anexos/marketing/${encodeURIComponent(req.file.filename)}`;
+
+    const [r] = await pool.query(`
+      INSERT INTO SF_MARKETING_IMAGEM (
+        NOME_ARQUIVO, URL, TITULO, DESCRICAO, CARD,
+        ATIVO, EXIBIR_NO_PAINEL, DATA_INICIO, DATA_FIM,
+        RECORRENCIA, APENAS_UMA_VEZ, ORDEM
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      req.file.filename,
+      url,
+      titulo,
+      descricao,
+      card,
+      ativo,
+      exibirNoPainel,
+      dataInicio,
+      dataFim,
+      recorrencia,
+      apenasUmaVez,
+      ordem
+    ]);
+
+    return res.status(201).json({
+      success: true,
+      item: {
+        id: r.insertId,
+        name: req.file.filename,
+        url
+      }
+    });
+  } catch (err) {
+    console.error('Erro ao salvar card de marketing:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao salvar card de marketing.',
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/marketing/painel', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT *
+      FROM SF_MARKETING_IMAGEM
+      WHERE ATIVO = 1
+        AND EXIBIR_NO_PAINEL = 1
+      ORDER BY ORDEM ASC, ID DESC
+    `);
+
+    const hoje = new Date();
+    const yyyy = hoje.getFullYear();
+    const mm = String(hoje.getMonth() + 1).padStart(2, '0');
+    const dd = String(hoje.getDate()).padStart(2, '0');
+    const hojeStr = `${yyyy}-${mm}-${dd}`;
+
+    const ativos = rows.filter(item => {
+      const inicio = item.DATA_INICIO ? String(item.DATA_INICIO).slice(0, 10) : null;
+      const fim = item.DATA_FIM ? String(item.DATA_FIM).slice(0, 10) : null;
+      const rec = String(item.RECORRENCIA || 'once').toLowerCase();
+
+      if (inicio && hojeStr < inicio) return false;
+      if (fim && hojeStr > fim) return false;
+
+      if (item.APENAS_UMA_VEZ && item.ULTIMA_EXIBICAO_EM) return false;
+
+      if (rec === 'always') return true;
+      if (rec === 'daily') return true;
+
+      if (!inicio) return rec === 'once';
+
+      const [anoI, mesI, diaI] = inicio.split('-').map(Number);
+
+      if (rec === 'once') return hojeStr === inicio;
+      if (rec === 'monthly') return Number(dd) === diaI;
+      if (rec === 'yearly') return Number(dd) === diaI && Number(mm) === mesI;
+
+      return false;
+    });
+
+    res.json({
+      success: true,
+      items: ativos.map(item => ({
+        id: item.ID,
+        titulo: item.TITULO,
+        descricao: item.DESCRICAO,
+        card: item.CARD,
+        url: item.URL,
+        recorrencia: item.RECORRENCIA
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar cards do painel.',
+      error: err.message
+    });
+  }
+});
+
 
 function normalizarUF(uf) {
   const s = (uf || '').toString().trim().toUpperCase();
