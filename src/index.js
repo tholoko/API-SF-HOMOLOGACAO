@@ -1017,13 +1017,6 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
       ? JSON.stringify(Array.isArray(req.body?.filhos) ? req.body.filhos : [])
       : null;
 
-    if (!nome || !email || !perfil || !setor || !status) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nome, e-mail, perfil, setor e status são obrigatórios.'
-      });
-    }
-
     const [rows] = await pool.query(
       `SELECT ID, FOTO, CNH_ARQUIVO FROM SF_USUARIO WHERE ID = ? LIMIT 1`,
       [id]
@@ -1036,14 +1029,14 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     const atual = rows[0];
 
     const [emailExistente] = await pool.query(
-      `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? AND ID <> ? LIMIT 1`,
-      [email, id]
+      `SELECT ID FROM SF_USUARIO WHERE CPF = ? AND ID <> ? LIMIT 1`,
+      [cpf, id]
     );
 
     if (emailExistente.length > 0) {
       return res.status(409).json({
         success: false,
-        message: 'Já existe outro usuário com este e-mail.'
+        message: 'Já existe outro usuário com este CPF.'
       });
     }
 
