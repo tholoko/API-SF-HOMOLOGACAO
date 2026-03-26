@@ -859,23 +859,9 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
       ? JSON.stringify(Array.isArray(req.body?.filhos) ? req.body.filhos : [])
       : null;
 
-    if (!nome || !email || !senha || !perfil || !setor || !status) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nome, e-mail, senha, perfil, setor e status são obrigatórios.'
-      });
-    }
-
-    if (senha.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Senha deve ter no mínimo 6 caracteres.'
-      });
-    }
-
     const [emailExistente] = await pool.query(
-      `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
-      [email]
+      `SELECT ID FROM SF_USUARIO WHERE CPF = ? LIMIT 1`,
+      [cpf]
     );
 
     if (emailExistente.length > 0) {
