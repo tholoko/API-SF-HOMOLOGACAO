@@ -1978,43 +1978,54 @@ app.get('/api/marketing/painel', async (req, res) => {
     const hojeStr = `${yyyy}-${mm}-${dd}`;
 
     const ativos = rows.filter(item => {
-      const inicio = item.DATAINICIO ? String(item.DATAINICIO).slice(0, 10) : null;
-      const fim = item.DATAFIM ? String(item.DATAFIM).slice(0, 10) : null;
-      const rec = String(item.RECORRENCIA || 'once').toLowerCase().trim();
-      const apenasUmaVez = Number(item.APENASUMAVEZ || 0) === 1;
-      const jaExibido = !!item.ULTIMAEXIBICAOEM;
+    const inicio = toDateOnly(item.DATAINICIO);
+    const fim = toDateOnly(item.DATAFIM);
+    const rec = String(item.RECORRENCIA || 'once').toLowerCase().trim();
+    const apenasUmaVez = Number(item.APENASUMAVEZ || 0) === 1;
+    const jaExibido = !!item.ULTIMAEXIBICAOEM;
 
-      if (inicio && hojeStr < inicio) return false;
-      if (fim && hojeStr > fim) return false;
-
-      if (rec === 'always') return true;
-
-      if (rec === 'daily') {
-        return !apenasUmaVez || !jaExibido;
-      }
-
-      if (rec === 'once') {
-        if (!inicio) return true;
-        if (hojeStr !== inicio) return false;
-        return !apenasUmaVez || !jaExibido;
-      }
-
-      if (rec === 'monthly') {
-        if (!inicio) return false;
-        const [, , diaI] = inicio.split('-').map(Number);
-        if (Number(dd) !== diaI) return false;
-        return !apenasUmaVez || !jaExibido;
-      }
-
-      if (rec === 'yearly') {
-        if (!inicio) return false;
-        const [, mesI, diaI] = inicio.split('-').map(Number);
-        if (Number(dd) !== diaI || Number(mm) !== mesI) return false;
-        return !apenasUmaVez || !jaExibido;
-      }
-
-      return false;
+    console.log('[MARKETING/FILTER]', {
+      id: item.ID,
+      inicio,
+      fim,
+      hojeStr,
+      rec,
+      apenasUmaVez,
+      jaExibido
     });
+
+    if (inicio && hojeStr < inicio) return false;
+    if (fim && hojeStr > fim) return false;
+
+    if (rec === 'always') return true;
+
+    if (rec === 'daily') {
+      return !apenasUmaVez || !jaExibido;
+    }
+
+    if (rec === 'once') {
+      if (!inicio) return true;
+      if (hojeStr !== inicio) return false;
+      return !apenasUmaVez || !jaExibido;
+    }
+
+    if (rec === 'monthly') {
+      if (!inicio) return false;
+      const [, , diaI] = inicio.split('-').map(Number);
+      if (Number(dd) !== diaI) return false;
+      return !apenasUmaVez || !jaExibido;
+    }
+
+    if (rec === 'yearly') {
+      if (!inicio) return false;
+      const [, mesI, diaI] = inicio.split('-').map(Number);
+      if (Number(dd) !== diaI || Number(mm) !== mesI) return false;
+      return !apenasUmaVez || !jaExibido;
+    }
+
+    return false;
+  });
+
 
     console.log('[MARKETING/PAINEL] rows=', rows);
     console.log('[MARKETING/PAINEL] hoje=', hojeStr);
