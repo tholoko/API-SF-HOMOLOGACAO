@@ -1444,6 +1444,42 @@ app.post('/api/gestao-usuarios-funcoes', async (req, res) => {
   }
 });
 
+app.post('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
+  try {
+    const nome = titleCaseNome(req.body?.nome || '');
+    const endereco = String(req.body?.endereco || '').trim();
+    const telefone = String(req.body?.telefone || '').trim();
+
+    if (!nome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome da unidade de trabalho é obrigatório.'
+      });
+    }
+
+    const [r] = await pool.query(
+      `INSERT INTO SF_LOCAL_TRABALHO (NOME, ENDERECO, TELEFONE) VALUES (?, ?, ?)`,
+      [nome, endereco || null, telefone || null]
+    );
+
+    return res.status(201).json({
+      success: true,
+      item: {
+        id: r.insertId,
+        nome,
+        endereco,
+        telefone
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao adicionar unidade de trabalho.',
+      error: err.message
+    });
+  }
+});
+
 app.get('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -1463,9 +1499,20 @@ app.get('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
   }
 });
 
-app.post('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
+app.put('/api/gestao-usuarios-locais-trabalho/:id', async (req, res) => {
   try {
-    const nome = titleCaseNome(req.body?.nome);
+    const id = Number(req.params.id);
+    const nome = titleCaseNome(req.body?.nome || '');
+    const endereco = String(req.body?.endereco || '').trim();
+    const telefone = String(req.body?.telefone || '').trim();
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da unidade de trabalho inválido.'
+      });
+    }
+
     if (!nome) {
       return res.status(400).json({
         success: false,
@@ -1473,16 +1520,66 @@ app.post('/api/gestao-usuarios-locais-trabalho', async (req, res) => {
       });
     }
 
-    const [r] = await pool.query(`INSERT INTO SF_LOCAL_TRABALHO (NOME) VALUES (?)`, [nome]);
+    const [r] = await pool.query(
+      `
+      UPDATE SF_LOCAL_TRABALHO
+         SET NOME = ?, ENDERECO = ?, TELEFONE = ?
+       WHERE ID = ?
+      `,
+      [nome, endereco || null, telefone || null, id]
+    );
 
-    return res.status(201).json({
+    if (!r.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Unidade de trabalho não encontrada.'
+      });
+    }
+
+    return res.json({
       success: true,
-      item: { id: r.insertId, nome }
+      item: { id, nome, endereco, telefone }
     });
   } catch (err) {
     return res.status(500).json({
       success: false,
-      message: 'Erro ao adicionar unidade de trabalho.',
+      message: 'Erro ao editar unidade de trabalho.',
+      error: err.message
+    });
+  }
+});
+
+app.delete('/api/gestao-usuarios-locais-trabalho/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da unidade de trabalho inválido.'
+      });
+    }
+
+    const [r] = await pool.query(
+      `DELETE FROM SF_LOCAL_TRABALHO WHERE ID = ?`,
+      [id]
+    );
+
+    if (!r.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Unidade de trabalho não encontrada.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Unidade de trabalho excluída com sucesso.'
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir unidade de trabalho.',
       error: err.message
     });
   }
