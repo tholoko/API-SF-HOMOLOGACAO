@@ -7468,6 +7468,449 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
   }
 });
 
+function normalizarTexto(v) {
+  return String(v || '').trim();
+}
+
+function normalizarStatusReserva(v) {
+  return normalizarTexto(v).toUpperCase();
+}
+
+app.put('/api/reservas-carro/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+    const {
+      tipoVeiculo,
+      dataNecessaria,
+      previsaoDevolucao,
+      destinos,
+      observacoes,
+      urgencia,
+      usuarioSolicitante
+    } = req.body || {};
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    if (!tipoVeiculo || !dataNecessaria || !previsaoDevolucao || !urgencia || !usuarioSolicitante) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe tipoVeiculo, dataNecessaria, previsaoDevolucao, urgencia e usuarioSolicitante.'
+      });
+    }
+
+    if (!Array.isArray(destinos) || !destinos.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione pelo menos um destino.'
+      });
+    }
+
+    const dataNecessariaMysql = datetimeLocalToMysql(dataNecessaria);
+    const previsaoDevolucaoMysql = datetimeLocalToMysql(previsaoDevolucao);
+
+    if (!dataNecessariaMysql || !previsaoDevolucaoMysql) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data necessária ou previsão de devolução inválida.'
+      });
+    }
+
+    if (previsaoDevolucaoMysql <= dataNecessariaMysql) {
+      return res.status(400).json({
+        success: false,
+        message: 'A previsão de devolução deve ser maior que a data necessária.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+    await conn.beginTransaction();
+
+    const [rowsReserva] = await conn.query(`
+      SELECT
+        id,
+        usuario_solicitante,
+        status_solicitacao
+      FROM SF_RESERVA_CARRO
+      WHERE id = ?
+      LIMIT 1
+    `, [idReserva]);
+
+    const reserva = rowsReserva?.[0];
+
+    if (!reserva) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    if (normalizarStatusReserva(reserva.status_solicitacao) !== 'PENDENTE') {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Somente reservas pendentes podem ser editadas.'
+      });
+    }
+
+    if (normalizarTexto(reserva.usuario_solicitante).toUpperCase() !== normalizarTexto(usuarioSolicitante).toUpperCase()) {
+      await conn.rollback();
+      return res.status(403).json({
+        success: false,
+        message: 'Você não tem permissão para editar esta reserva.'
+      });
+    }
+
+    await conn.query(`
+      UPDATE SF_RESERVA_CARRO
+      SET
+        tipo_veiculo = ?,
+        data_necessaria = ?,
+        previsao_devolucao = ?,
+        urgencia = ?,
+        observacoes = ?,
+        usuario_solicitante = ?
+      WHERE id = ?
+    `, [
+      normalizarTexto(tipoVeiculo).toUpperCase(),
+      dataNecessariaMysql,
+      previsaoDevolucaoMysql,
+      normalizarTexto(urgencia).toUpperCase(),
+      observacoes ? normalizarTexto(observacoes) : null,
+      normalizarTexto(usuarioSolicitante),
+      idReserva
+    ]);
+
+    await conn.query(`
+      DELETE FROM SF_RESERVA_CARRO_DESTINO
+      WHERE reserva_id = ?
+    `, [idReserva]);
+
+    for (const idDestinoRaw of destinos) {
+      const idDestino = Number(idDestinoRaw);
+
+      if (!idDestino) {
+        throw new Error('Foi encontrado um destino inválido na solicitação.');
+      }
+
+      await conn.query(`
+        INSERT INTO SF_RESERVA_CARRO_DESTINO (
+          reserva_id,
+          local_trabalho_id
+        ) VALUES (?, ?)
+      `, [idReserva, idDestino]);
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Reserva atualizada com sucesso.'
+    });
+
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao editar reserva de carro:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao editar reserva de carro.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+    const usuarioAprovacao = normalizarTexto(req.body?.usuarioAprovacao);
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    if (!usuarioAprovacao) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o usuário que está aprovando a reserva.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+    await conn.beginTransaction();
+
+    const [rowsReserva] = await conn.query(`
+      SELECT
+        id,
+        status_solicitacao
+      FROM SF_RESERVA_CARRO
+      WHERE id = ?
+      LIMIT 1
+    `, [idReserva]);
+
+    const reserva = rowsReserva?.[0];
+
+    if (!reserva) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    if (normalizarStatusReserva(reserva.status_solicitacao) !== 'PENDENTE') {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Somente reservas pendentes podem ser aprovadas.'
+      });
+    }
+
+    await conn.query(`
+      UPDATE SF_RESERVA_CARRO
+      SET
+        status_solicitacao = 'APROVADA',
+        usuario_aprovacao = ?,
+        data_aprovacao = NOW(),
+        motivo_recusa = NULL,
+        usuario_recusa = NULL,
+        data_recusa = NULL
+      WHERE id = ?
+    `, [usuarioAprovacao, idReserva]);
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Reserva aprovada com sucesso.'
+    });
+
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao aprovar reserva:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao aprovar reserva.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/reservas-carro/:id/recusar', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+    const usuarioRecusa = normalizarTexto(req.body?.usuarioRecusa);
+    const motivoRecusa = normalizarTexto(req.body?.motivoRecusa);
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    if (!usuarioRecusa) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o usuário que está recusando a reserva.'
+      });
+    }
+
+    if (!motivoRecusa) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o motivo da recusa.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+    await conn.beginTransaction();
+
+    const [rowsReserva] = await conn.query(`
+      SELECT
+        id,
+        status_solicitacao
+      FROM SF_RESERVA_CARRO
+      WHERE id = ?
+      LIMIT 1
+    `, [idReserva]);
+
+    const reserva = rowsReserva?.[0];
+
+    if (!reserva) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    if (normalizarStatusReserva(reserva.status_solicitacao) !== 'PENDENTE') {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Somente reservas pendentes podem ser recusadas.'
+      });
+    }
+
+    await conn.query(`
+      UPDATE SF_RESERVA_CARRO
+      SET
+        status_solicitacao = 'RECUSADA',
+        motivo_recusa = ?,
+        usuario_recusa = ?,
+        data_recusa = NOW()
+      WHERE id = ?
+    `, [motivoRecusa, usuarioRecusa, idReserva]);
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Reserva recusada com sucesso.'
+    });
+
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao recusar reserva:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao recusar reserva.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.delete('/api/reservas-carro/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+    const usuarioExclusao = normalizarTexto(req.body?.usuarioExclusao);
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    if (!usuarioExclusao) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o usuário que está excluindo a reserva.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+    await conn.beginTransaction();
+
+    const [rowsReserva] = await conn.query(`
+      SELECT
+        id,
+        usuario_solicitante,
+        status_solicitacao
+      FROM SF_RESERVA_CARRO
+      WHERE id = ?
+      LIMIT 1
+    `, [idReserva]);
+
+    const reserva = rowsReserva?.[0];
+
+    if (!reserva) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    const statusAtual = normalizarStatusReserva(reserva.status_solicitacao);
+    const mesmoUsuario =
+      normalizarTexto(reserva.usuario_solicitante).toUpperCase() ===
+      normalizarTexto(usuarioExclusao).toUpperCase();
+
+    if (!mesmoUsuario) {
+      await conn.rollback();
+      return res.status(403).json({
+        success: false,
+        message: 'Você não tem permissão para excluir esta reserva.'
+      });
+    }
+
+    if (!['PENDENTE', 'RECUSADA', 'CANCELADA'].includes(statusAtual)) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Somente reservas pendentes, recusadas ou canceladas podem ser excluídas.'
+      });
+    }
+
+    await conn.query(`
+      DELETE FROM SF_RESERVA_CARRO_DESTINO
+      WHERE reserva_id = ?
+    `, [idReserva]);
+
+    await conn.query(`
+      DELETE FROM SF_RESERVA_CARRO
+      WHERE id = ?
+    `, [idReserva]);
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Reserva excluída com sucesso.'
+    });
+
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao excluir reserva:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir reserva.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 
 
 
