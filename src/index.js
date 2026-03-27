@@ -958,7 +958,6 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
 });
 
 app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
-  
   try {
     const id = Number(req.params.id);
 
@@ -993,11 +992,12 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     const email_pessoal = texto(email_pessoal_bruto) ? normalizarEmail(email_pessoal_bruto) : null;
 
     const foto = req.body?.foto;
-
     const apelido = texto(req.body?.apelido);
+
     const numero_calcado = String(req.body?.numero_calcado ?? '').trim() !== ''
       ? Number(req.body?.numero_calcado)
       : null;
+
     const tamanhoCamisaBruto = texto(req.body?.tamanhocamisa || req.body?.tamanho_camisa);
     const tamanho_camisa = tamanhoCamisaBruto ? tamanhoCamisaBruto.toUpperCase() : null;
     const tamanho_calca = texto(req.body?.tamanhocalca || req.body?.tamanho_calca);
@@ -1027,12 +1027,12 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
 
     const atual = rows[0];
 
-    const [emailExistente] = await pool.query(
+    const [cpfExistente] = await pool.query(
       `SELECT ID FROM SF_USUARIO WHERE CPF = ? AND ID <> ? LIMIT 1`,
       [cpf, id]
     );
 
-    if (emailExistente.length > 0) {
+    if (cpfExistente.length > 0) {
       return res.status(409).json({
         success: false,
         message: 'Já existe outro usuário com este CPF.'
@@ -1116,35 +1116,41 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
     }
 
-    if (foto === null && atual.FOTO) {
-      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
-      if (nomeArq) await apagarArquivoSeExistir(path.join(PASTAFOTOUSUARIO, nomeArq));
+    try {
+      if (foto === null && atual.FOTO) {
+        const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
+        if (nomeArq) await apagarArquivoSeExistir(path.join(PASTAFOTOUSUARIO, nomeArq));
+      }
+
+      if (typeof foto === 'string' && foto.trim() && atual.FOTO && atual.FOTO !== foto.trim()) {
+        const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
+        if (nomeArq) await apagarArquivoSeExistir(path.join(PASTAFOTOUSUARIO, nomeArq));
+      }
+
+      if (cnh_arquivo === null && atual.CNH_ARQUIVO) {
+        const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.CNH_ARQUIVO);
+        if (nomeArq) await apagarArquivoSeExistir(path.join(PASTACNHUSUARIO, nomeArq));
+      }
+
+      if (typeof cnh_arquivo === 'string' && cnh_arquivo.trim() && atual.CNH_ARQUIVO && atual.CNH_ARQUIVO !== cnh_arquivo.trim()) {
+        const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.CNH_ARQUIVO);
+        if (nomeArq) await apagarArquivoSeExistir(path.join(PASTACNHUSUARIO, nomeArq));
+      }
+    } catch (cleanupErr) {
+      console.error('Usuário atualizado, mas falhou ao limpar arquivos antigos:', cleanupErr);
     }
 
-    if (typeof foto === 'string' && foto.trim() && atual.FOTO && atual.FOTO !== foto.trim()) {
-      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.FOTO);
-      if (nomeArq) await apagarArquivoSeExistir(path.join(PASTAFOTOUSUARIO, nomeArq));
-    }
-
-    if (cnh_arquivo === null && atual.CNH_ARQUIVO) {
-      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.CNH_ARQUIVO);
-      if (nomeArq) await apagarArquivoSeExistir(path.join(PASTACNHUSUARIO, nomeArq));
-    }
-
-    if (typeof cnh_arquivo === 'string' && cnh_arquivo.trim() && atual.CNH_ARQUIVO && atual.CNH_ARQUIVO !== cnh_arquivo.trim()) {
-      const nomeArq = extrairNomeArquivoDeUrlPossivel(atual.CNH_ARQUIVO);
-      if (nomeArq) await apagarArquivoSeExistir(path.join(PASTACNHUSUARIO, nomeArq));
-    }
-
-    res.json({ success: true, message: 'Usuário atualizado com sucesso.' });
+    return res.json({ success: true, message: 'Usuário atualizado com sucesso.' });
   } catch (err) {
-    res.status(500).json({
+    console.error('Erro PUT /api/gestao-usuarios/:id', err);
+    return res.status(500).json({
       success: false,
       message: 'Erro ao atualizar usuário.',
       error: err.message
     });
   }
 });
+
 
 app.get('/api/gestao-usuarios', async (req, res) => {
   try {
