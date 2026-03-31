@@ -7754,13 +7754,16 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
   }
 });
 
-
 app.post('/api/reservas-carro/:id/recusar', async (req, res) => {
   let conn;
 
   try {
     const idReserva = Number(req.params.id);
-    const usuarioRecusa = normalizarTexto(req.body?.usuarioRecusa);
+    const usuarioRecusa = normalizarTexto(
+      req.body?.usuarioRecusa ||
+      req.headers['x-usuario'] ||
+      req.headers['x-user']
+    );
     const motivoRecusa = normalizarTexto(req.body?.motivoRecusa);
 
     if (!idReserva) {
@@ -7815,6 +7818,38 @@ app.post('/api/reservas-carro/:id/recusar', async (req, res) => {
       });
     }
 
+    const [usuarioRows] = await conn.query(`
+      SELECT
+        u.ID,
+        u.NOME,
+        u.PERFIL,
+        p.aprovar_reserva_carro
+      FROM SF_USUARIO u
+      LEFT JOIN SF_PERFIL p
+        ON UPPER(TRIM(p.nome)) = UPPER(TRIM(u.PERFIL))
+      WHERE UPPER(TRIM(u.NOME)) = UPPER(TRIM(?))
+      LIMIT 1
+    `, [usuarioRecusa]);
+
+    if (!usuarioRows.length) {
+      await conn.rollback();
+      return res.status(403).json({
+        success: false,
+        message: 'Usuário solicitante não encontrado ou sem perfil válido.'
+      });
+    }
+
+    const usuarioDb = usuarioRows[0];
+    const podeAprovarOuRecusar = Number(usuarioDb.aprovar_reserva_carro) === 1;
+
+    if (!podeAprovarOuRecusar) {
+      await conn.rollback();
+      return res.status(403).json({
+        success: false,
+        message: 'Você não tem permissão para recusar esta reserva.'
+      });
+    }
+
     await conn.query(`
       UPDATE SF_RESERVA_CARRO
       SET
@@ -7831,7 +7866,6 @@ app.post('/api/reservas-carro/:id/recusar', async (req, res) => {
       success: true,
       message: 'Reserva recusada com sucesso.'
     });
-
   } catch (err) {
     if (conn) {
       try { await conn.rollback(); } catch (_) {}
@@ -7847,6 +7881,7 @@ app.post('/api/reservas-carro/:id/recusar', async (req, res) => {
     if (conn) conn.release();
   }
 });
+
 
 app.delete('/api/reservas-carro/:id', async (req, res) => {
   let conn;
