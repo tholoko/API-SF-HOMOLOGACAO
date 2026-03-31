@@ -7817,7 +7817,11 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
 
   try {
     const idReserva = Number(req.params.id);
-    const usuarioExclusao = normalizarTexto(req.body?.usuarioExclusao);
+    const usuarioExclusao = normalizarTexto(
+      req.body?.usuarioExclusao ||
+      req.headers['x-usuario'] ||
+      req.headers['x-user']
+    );
 
     if (!idReserva) {
       return res.status(400).json({
@@ -7857,25 +7861,61 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
       });
     }
 
-    const statusAtual = normalizarStatusReserva(reserva.status_solicitacao);
-    const mesmoUsuario =
-      normalizarTexto(reserva.usuario_solicitante).toUpperCase() ===
-      normalizarTexto(usuarioExclusao).toUpperCase();
+    const [usuarioRows] = await conn.query(`
+      SELECT
+        u.ID,
+        u.NOME,
+        u.PERFIL,
+        p.excluirreservacarro
+      FROM SF_USUARIO u
+      LEFT JOIN SF_PERFIL p
+        ON UPPER(TRIM(p.NOME)) = UPPER(TRIM(u.PERFIL))
+      WHERE UPPER(TRIM(u.NOME)) = UPPER(TRIM(?))
+      LIMIT 1
+    `, [usuarioExclusao]);
 
-    if (!mesmoUsuario) {
+    if (!usuarioRows.length) {
       await conn.rollback();
       return res.status(403).json({
         success: false,
-        message: 'Você não tem permissão para excluir esta reserva.'
+        message: 'Usuário solicitante não encontrado ou sem perfil válido.'
       });
     }
 
-    if (!['PENDENTE', 'RECUSADA', 'CANCELADA'].includes(statusAtual)) {
-      await conn.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Somente reservas pendentes, recusadas ou canceladas podem ser excluídas.'
-      });
+    const usuarioDb = usuarioRows[0];
+
+    const statusAtual = normalizarStatusReserva(reserva.status_solicitacao);
+    const ehCriador =
+      normalizarTexto(reserva.usuario_solicitante).toUpperCase() ===
+      normalizarTexto(usuarioExclusao).toUpperCase();
+
+    const ehMasterExclusao =
+      Number(usuarioDb.excluirreservacarro) === 1;
+
+    if (ehCriador) {
+      if (statusAtual !== 'PENDENTE') {
+        await conn.rollback();
+        return res.status(400).json({
+          success: false,
+          message: 'Você só pode excluir sua própria reserva quando ela estiver pendente.'
+        });
+      }
+    } else {
+      if (!ehMasterExclusao) {
+        await conn.rollback();
+        return res.status(403).json({
+          success: false,
+          message: 'Você não tem permissão para excluir esta reserva.'
+        });
+      }
+
+      if (!['PENDENTE', 'RECUSADA', 'CANCELADA'].includes(statusAtual)) {
+        await conn.rollback();
+        return res.status(400).json({
+          success: false,
+          message: 'Somente reservas pendentes, recusadas ou canceladas podem ser excluídas.'
+        });
+      }
     }
 
     await conn.query(`
@@ -7894,7 +7934,6 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
       success: true,
       message: 'Reserva excluída com sucesso.'
     });
-
   } catch (err) {
     if (conn) {
       try { await conn.rollback(); } catch (_) {}
