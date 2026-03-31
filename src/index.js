@@ -7866,7 +7866,7 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
         u.ID,
         u.NOME,
         u.PERFIL,
-        p.excluirreservacarro
+        p.excluir_reserva_carro
       FROM SF_USUARIO u
       LEFT JOIN SF_PERFIL p
         ON UPPER(TRIM(p.NOME)) = UPPER(TRIM(u.PERFIL))
@@ -7890,7 +7890,7 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
       normalizarTexto(usuarioExclusao).toUpperCase();
 
     const ehMasterExclusao =
-      Number(usuarioDb.excluirreservacarro) === 1;
+      Number(usuarioDb.excluir_reserva_carro) === 1;
 
     if (ehCriador) {
       if (statusAtual !== 'PENDENTE') {
