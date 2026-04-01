@@ -7058,6 +7058,64 @@ app.get('/api/clima-links', async (req, res) => {
 
 // RESERVAR CARRO
 
+function obterStatusQueNaoBloqueiamReserva() {
+  return [
+    'RECUSADA',
+    'DEVOLVIDA',
+    'DEVOLVIDO',
+    'CANCELADA',
+    'CONCLUIDA',
+    'CONCLUÍDA'
+  ];
+}
+
+async function validarConflitoReservaCarro(conn, {
+  usuarioSolicitante,
+  dataNecessariaMysql,
+  previsaoDevolucaoMysql,
+  idIgnorar = null
+}) {
+  const usuarioNormalizado = normalizarTexto(usuarioSolicitante);
+
+  if (!usuarioNormalizado || !dataNecessariaMysql || !previsaoDevolucaoMysql) {
+    return null;
+  }
+
+  const statusQueNaoBloqueiam = obterStatusQueNaoBloqueiamReserva();
+
+  let sql = `
+    SELECT
+      id,
+      data_necessaria,
+      previsao_devolucao,
+      status_solicitacao
+    FROM SF_RESERVA_CARRO
+    WHERE UPPER(TRIM(usuario_solicitante)) = UPPER(TRIM(?))
+      AND UPPER(TRIM(status_solicitacao)) NOT IN (${statusQueNaoBloqueiam.map(() => '?').join(', ')})
+      AND (
+        ? < previsao_devolucao
+        AND ? > data_necessaria
+      )
+  `;
+
+  const params = [
+    usuarioNormalizado,
+    ...statusQueNaoBloqueiam,
+    dataNecessariaMysql,
+    previsaoDevolucaoMysql
+  ];
+
+  if (idIgnorar) {
+    sql += ` AND id <> ?`;
+    params.push(Number(idIgnorar));
+  }
+
+  sql += ` ORDER BY id DESC LIMIT 1`;
+
+  const [rows] = await conn.query(sql, params);
+  return rows?.[0] || null;
+}
+
 app.get('/api/local-trabalho', async (req, res) => {
   let conn;
 
@@ -7148,6 +7206,22 @@ app.post('/api/reservas-carro', async (req, res) => {
     await conn.query("SET time_zone = '-03:00'");
     await conn.beginTransaction();
 
+    const usuarioSolicitanteNormalizado = normalizarTexto(usuarioSolicitante);
+
+    const conflito = await validarConflitoReservaCarro(conn, {
+      usuarioSolicitante: usuarioSolicitanteNormalizado,
+      dataNecessariaMysql,
+      previsaoDevolucaoMysql
+    });
+
+    if (conflito) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Já existe uma solicitação ativa para este usuário no mesmo período. Reserva conflitante #${conflito.id}.`
+      });
+    }
+
     const [insertReserva] = await conn.query(`
       INSERT INTO SF_RESERVA_CARRO (
         tipo_veiculo,
@@ -7158,12 +7232,12 @@ app.post('/api/reservas-carro', async (req, res) => {
         usuario_solicitante
       ) VALUES (?, ?, ?, ?, ?, ?)
     `, [
-      String(tipoVeiculo).trim().toUpperCase(),
+      normalizarTexto(tipoVeiculo).toUpperCase(),
       dataNecessariaMysql,
       previsaoDevolucaoMysql,
-      String(urgencia).trim().toUpperCase(),
-      observacoes ? String(observacoes).trim() : null,
-      String(usuarioSolicitante).trim()
+      normalizarTexto(urgencia).toUpperCase(),
+      observacoes ? normalizarTexto(observacoes) : null,
+      usuarioSolicitanteNormalizado
     ]);
 
     const reservaId = Number(insertReserva.insertId);
@@ -7277,20 +7351,40 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
 
     const [rowsReserva] = await conn.query(`
       SELECT
-        id,
-        tipo_veiculo,
-        data_necessaria,
-        previsao_devolucao,
-        urgencia,
-        observacoes,
-        usuario_solicitante,
-        data_solicitacao,
-        status_solicitacao,
-        motivo_recusa,
-        usuario_recusa,
-        data_recusa
-      FROM SF_RESERVA_CARRO
-      WHERE id = ?
+        rc.id,
+        rc.tipo_veiculo,
+        rc.data_necessaria,
+        rc.previsao_devolucao,
+        rc.urgencia,
+        rc.observacoes,
+        rc.usuario_solicitante,
+        rc.data_solicitacao,
+        rc.status_solicitacao,
+        rc.motivo_recusa,
+        rc.usuario_recusa,
+        rc.data_recusa,
+        rc.usuario_aprovacao,
+        rc.data_aprovacao,
+        rc.veiculo_id,
+        rc.checklist_saida,
+        rc.km_saida,
+        rc.km_devolucao,
+        rc.nivel_combustivel_saida,
+        rc.foto_frente,
+        rc.foto_traseira,
+        rc.foto_lateral_esquerda,
+        rc.foto_lateral_direita,
+        rc.foto_painel,
+        v.placa AS veiculo_placa,
+        v.modelo AS veiculo_modelo,
+        v.marca AS veiculo_marca,
+        v.cor AS veiculo_cor,
+        v.km_atual AS veiculo_km_atual,
+        v.status_veiculo AS veiculo_status
+      FROM SF_RESERVA_CARRO rc
+      LEFT JOIN SF_VEICULOS v
+        ON v.id = rc.veiculo_id
+      WHERE rc.id = ?
       LIMIT 1
     `, [idReserva]);
 
@@ -7313,14 +7407,23 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
       ORDER BY lt.nome
     `, [idReserva]);
 
+    let checklistSaida = {};
+    try {
+      checklistSaida = reserva.checklist_saida
+        ? JSON.parse(reserva.checklist_saida)
+        : {};
+    } catch (_) {
+      checklistSaida = {};
+    }
+
     return res.json({
       success: true,
       item: {
         ...reserva,
+        checklist_saida: checklistSaida,
         destinos: rowsDestinos
       }
     });
-
   } catch (err) {
     console.error('Erro ao buscar reserva de carro:', err);
     return res.status(500).json({
@@ -7347,7 +7450,15 @@ app.put('/api/reservas-carro/:id/status', async (req, res) => {
       });
     }
 
-    const statusPermitidos = ['PENDENTE', 'APROVADA', 'RECUSADA', 'CANCELADA', 'CONCLUIDA'];
+    const statusPermitidos = [
+      'PENDENTE',
+      'AGUARDANDO_CONFIRMACAO',
+      'APROVADA',
+      'RECUSADA',
+      'CANCELADA',
+      'DEVOLVIDA',
+      'CONCLUIDA'
+    ];
     if (!statusPermitidos.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -7421,6 +7532,7 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
 
   try {
     const usuarioSolicitante = String(req.params.usuarioSolicitante || '').trim();
+    const usuarioId = Number(req.query.usuarioId || 0);
 
     if (!usuarioSolicitante) {
       return res.status(400).json({
@@ -7429,20 +7541,37 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
       });
     }
 
+    if (!usuarioId) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID do usuário inválido.'
+      });
+    }
+
     conn = await pool.getConnection();
 
     const [permissaoRows] = await conn.query(`
       SELECT
-        COALESCE(p.aprovar_reserva_carro, 0) AS aprovar_reserva_carro
-      FROM SF_USUARIOS u
-      LEFT JOIN SF_PERMISSOES p
-        ON p.id = u.permissao_id
-      WHERE UPPER(TRIM(u.usuario)) = UPPER(TRIM(?))
+        u.ID AS usuario_id,
+        u.NOME AS usuario_nome,
+        u.PERFIL AS perfil,
+        p.aprovar_reserva_carro
+      FROM SF_USUARIO u
+      LEFT JOIN SF_PERFIL p
+        ON p.nome = u.perfil
+      WHERE u.ID = ?
       LIMIT 1
-    `, [usuarioSolicitante]);
+    `, [usuarioId]);
 
-    const podeAprovarReservaCarro =
-      Number(permissaoRows?.[0]?.aprovar_reserva_carro || 0) === 1;
+    if (!permissaoRows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuário não encontrado.'
+      });
+    }
+
+    const itemPermissao = permissaoRows[0];
+    const podeAprovarReservaCarro = Number(itemPermissao.aprovar_reserva_carro) === 1;
 
     let sql = `
       SELECT
@@ -7490,7 +7619,6 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
 
     return res.json({
       success: true,
-      podeAprovarReservaCarro,
       items: rows
     });
 
@@ -7607,6 +7735,23 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       });
     }
 
+    const usuarioSolicitanteNormalizado = normalizarTexto(usuarioSolicitante);
+
+    const conflito = await validarConflitoReservaCarro(conn, {
+      usuarioSolicitante: usuarioSolicitanteNormalizado,
+      dataNecessariaMysql,
+      previsaoDevolucaoMysql,
+      idIgnorar: idReserva
+    });
+
+    if (conflito) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Já existe outra solicitação ativa para este usuário no mesmo período. Reserva conflitante #${conflito.id}.`
+      });
+    }
+
     await conn.query(`
       UPDATE SF_RESERVA_CARRO
       SET
@@ -7623,7 +7768,7 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       previsaoDevolucaoMysql,
       normalizarTexto(urgencia).toUpperCase(),
       observacoes ? normalizarTexto(observacoes) : null,
-      normalizarTexto(usuarioSolicitante),
+      usuarioSolicitanteNormalizado,
       idReserva
     ]);
 
@@ -8231,6 +8376,263 @@ app.get('/api/permissoes/aprovar-reserva-carro/:usuarioId', async (req, res) => 
   }
 });
 
+app.post('/api/reservas-carro/:id/devolucao', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+    const usuarioDevolucao = normalizarTexto(
+      req.body?.usuarioDevolucao ||
+      req.headers['x-usuario'] ||
+      req.headers['x-user']
+    );
+
+    const kmDevolucao = req.body?.kmDevolucao !== undefined && req.body?.kmDevolucao !== null && req.body?.kmDevolucao !== ''
+      ? Number(req.body.kmDevolucao)
+      : null;
+
+    const nivelCombustivelDevolucao = normalizarTexto(req.body?.nivelCombustivelDevolucao);
+    const checklistDevolucao = req.body?.checklistDevolucao || {};
+    const observacoesDevolucao = normalizarTexto(req.body?.observacoesDevolucao);
+
+    const fotoFrente = normalizarTexto(req.body?.fotoFrente);
+    const fotoTraseira = normalizarTexto(req.body?.fotoTraseira);
+    const fotoLateralEsquerda = normalizarTexto(req.body?.fotoLateralEsquerda);
+    const fotoLateralDireita = normalizarTexto(req.body?.fotoLateralDireita);
+    const fotoPainel = normalizarTexto(req.body?.fotoPainel);
+
+    if (!idReserva) {
+      return res.status(400).json({ success: false, message: 'Informe um id de reserva válido.' });
+    }
+
+    if (!usuarioDevolucao) {
+      return res.status(400).json({ success: false, message: 'Usuário da devolução não informado.' });
+    }
+
+    if (!fotoFrente || !fotoTraseira || !fotoLateralEsquerda || !fotoLateralDireita || !fotoPainel) {
+      return res.status(400).json({
+        success: false,
+        message: 'É obrigatório informar as 5 fotos na devolução.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+    await conn.beginTransaction();
+
+    const [rowsReserva] = await conn.query(`
+      SELECT
+        id,
+        usuario_solicitante,
+        status_solicitacao,
+        veiculo_id
+      FROM SF_RESERVA_CARRO
+      WHERE id = ?
+      LIMIT 1
+    `, [idReserva]);
+
+    const reserva = rowsReserva?.[0];
+
+    if (!reserva) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, message: 'Reserva não encontrada.' });
+    }
+
+    if (normalizarStatusReserva(reserva.status_solicitacao) !== 'APROVADA') {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Somente reservas aprovadas podem solicitar devolução.'
+      });
+    }
+
+    const ehCriador =
+      normalizarTexto(reserva.usuario_solicitante).toUpperCase() ===
+      normalizarTexto(usuarioDevolucao).toUpperCase();
+
+    if (!ehCriador) {
+      await conn.rollback();
+      return res.status(403).json({
+        success: false,
+        message: 'Você não tem permissão para fazer a devolução desta reserva.'
+      });
+    }
+
+    await conn.query(`
+      UPDATE SF_RESERVA_CARRO
+      SET
+        status_solicitacao = 'AGUARDANDO_CONFIRMACAO',
+        checklist_devolucao = ?,
+        km_devolucao = ?,
+        nivel_combustivel_devolucao = ?,
+        observacoes_devolucao = ?,
+        foto_devolucao_frente = ?,
+        foto_devolucao_traseira = ?,
+        foto_devolucao_lateral_esquerda = ?,
+        foto_devolucao_lateral_direita = ?,
+        foto_devolucao_painel = ?,
+        usuario_devolucao = ?,
+        data_devolucao = NOW()
+      WHERE id = ?
+    `, [
+      JSON.stringify(checklistDevolucao || {}),
+      kmDevolucao,
+      nivelCombustivelDevolucao || null,
+      observacoesDevolucao || null,
+      fotoFrente,
+      fotoTraseira,
+      fotoLateralEsquerda,
+      fotoLateralDireita,
+      fotoPainel,
+      usuarioDevolucao,
+      idReserva
+    ]);
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Devolução enviada para confirmação com sucesso.'
+    });
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao solicitar devolução da reserva:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao solicitar devolução da reserva.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/reservas-carro/:id/confirmar-devolucao', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+    const usuarioConfirmacao = normalizarTexto(
+      req.body?.usuarioConfirmacao ||
+      req.headers['x-usuario'] ||
+      req.headers['x-user']
+    );
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    if (!usuarioConfirmacao) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário da confirmação não informado.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+    await conn.beginTransaction();
+
+    const [rowsReserva] = await conn.query(`
+      SELECT
+        id,
+        status_solicitacao,
+        veiculo_id,
+        km_devolucao
+      FROM SF_RESERVA_CARRO
+      WHERE id = ?
+      LIMIT 1
+    `, [idReserva]);
+
+    const reserva = rowsReserva?.[0];
+
+    if (!reserva) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    if (![
+      'AGUARDANDO_CONFIRMACAO',
+      'AGUARDANDO CONFIRMACAO'
+    ].includes(normalizarStatusReserva(reserva.status_solicitacao))) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Somente devoluções aguardando confirmação podem ser confirmadas.'
+      });
+    }
+
+    const [usuarioRows] = await conn.query(`
+      SELECT
+        u.ID,
+        u.NOME,
+        p.aprovar_reserva_carro
+      FROM SF_USUARIO u
+      LEFT JOIN SF_PERFIL p
+        ON UPPER(TRIM(p.NOME)) = UPPER(TRIM(u.PERFIL))
+      WHERE UPPER(TRIM(u.NOME)) = UPPER(TRIM(?))
+      LIMIT 1
+    `, [usuarioConfirmacao]);
+
+    const usuarioDb = usuarioRows?.[0];
+
+    if (!usuarioDb || Number(usuarioDb.aprovar_reserva_carro || 0) !== 1) {
+      await conn.rollback();
+      return res.status(403).json({
+        success: false,
+        message: 'Você não tem permissão para confirmar devoluções.'
+      });
+    }
+
+    await conn.query(`
+      UPDATE SF_RESERVA_CARRO
+      SET
+        status_solicitacao = 'DEVOLVIDA',
+        usuario_confirmacao_devolucao = ?,
+        data_confirmacao_devolucao = NOW()
+      WHERE id = ?
+    `, [usuarioConfirmacao, idReserva]);
+
+    if (Number(reserva.veiculo_id || 0)) {
+      await conn.query(`
+        UPDATE SF_VEICULOS
+        SET
+          status_veiculo = 'DISPONIVEL',
+          km_atual = COALESCE(?, km_atual)
+        WHERE id = ?
+      `, [reserva.km_devolucao, reserva.veiculo_id]);
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Devolução confirmada com sucesso.'
+    });
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao confirmar devolução:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao confirmar devolução.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
 
 // Cadastro de Veiculos e Utilização de Veículos
 
@@ -8248,6 +8650,7 @@ app.get('/api/reservas-carro/:id/veiculos-disponiveis', async (req, res) => {
     }
 
     conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
 
     const [rowsReserva] = await conn.query(`
       SELECT
@@ -8282,8 +8685,9 @@ app.get('/api/reservas-carro/:id/veiculos-disponiveis', async (req, res) => {
         v.status_veiculo,
         v.ativo,
         CASE
-          WHEN v.ativo <> 1 THEN 'INATIVO'
-          WHEN UPPER(TRIM(v.status_veiculo)) = 'MANUTENCAO' THEN 'MANUTENCAO'
+          WHEN COALESCE(v.ativo, 0) <> 1 THEN 'INATIVO'
+          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 'MANUTENCAO'
+          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '_') IN ('EM_USO', 'EMUSO') THEN 'EM_USO'
           WHEN EXISTS (
             SELECT 1
             FROM SF_RESERVA_CARRO rc
@@ -8305,10 +8709,11 @@ app.get('/api/reservas-carro/:id/veiculos-disponiveis', async (req, res) => {
           LIMIT 1
         ) AS previsao_retorno
       FROM SF_VEICULOS v
-      WHERE v.ativo = 1
+      WHERE COALESCE(v.ativo, 0) = 1
       ORDER BY
         CASE
-          WHEN UPPER(TRIM(v.status_veiculo)) = 'MANUTENCAO' THEN 3
+          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 3
+          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '_') IN ('EM_USO', 'EMUSO') THEN 2
           WHEN EXISTS (
             SELECT 1
             FROM SF_RESERVA_CARRO rc
