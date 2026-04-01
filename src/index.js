@@ -6292,6 +6292,7 @@ app.get('/api/perfis', async (req, res) => {
         agendar_sala_reuniao,
         excluir_agendamento_sala_reuniao,
         reservar_carro,
+        aprovar_reserva_carro,
         excluir_reserva_carro,
         gestao_usuarios,
         gestao_usuarios_cadastro,
@@ -6352,6 +6353,7 @@ app.get('/api/perfis/:id', async (req, res) => {
         agendar_sala_reuniao,
         excluir_agendamento_sala_reuniao,
         reservar_carro,
+        aprovar_reserva_carro,
         excluir_reserva_carro,
         gestao_usuarios,
         gestao_usuarios_cadastro,
@@ -6427,6 +6429,7 @@ app.post('/api/perfis', async (req, res) => {
       agendar_sala_reuniao: bit(req.body?.agendar_sala_reuniao),
       excluir_agendamento_sala_reuniao: bit(req.body?.excluir_agendamento_sala_reuniao),
       reservar_carro: bit(req.body?.reservar_carro),
+      aprovar_reserva_carro: bit(req.body?.aprovar_reserva_carro),
       excluir_reserva_carro: bit(req.body?.excluir_reserva_carro),
       gestao_usuarios: bit(req.body?.gestao_usuarios),
       gestao_usuarios_cadastro: bit(req.body?.gestao_usuarios_cadastro),
@@ -6461,6 +6464,7 @@ app.post('/api/perfis', async (req, res) => {
         agendar_sala_reuniao,
         excluir_agendamento_sala_reuniao,
         reservar_carro,
+        aprovar_reserva_carro,
         excluir_reserva_carro,
         gestao_usuarios,
         gestao_usuarios_cadastro,
@@ -6493,6 +6497,7 @@ app.post('/api/perfis', async (req, res) => {
       payloadDepois.agendar_sala_reuniao,
       payloadDepois.excluir_agendamento_sala_reuniao,
       payloadDepois.reservar_carro,
+      payloadDepois.aprovar_reserva_carro,
       payloadDepois.excluir_reserva_carro,
       payloadDepois.gestao_usuarios,
       payloadDepois.gestao_usuarios_cadastro,
@@ -6614,6 +6619,7 @@ app.put('/api/perfis/:id', async (req, res) => {
       agendar_sala_reuniao: bit(req.body?.agendar_sala_reuniao),
       excluir_agendamento_sala_reuniao: bit(req.body?.excluir_agendamento_sala_reuniao),
       reservar_carro: bit(req.body?.reservar_carro),
+      aprovar_reserva_carro: bit(req.body?.aprovar_reserva_carro),
       excluir_reserva_carro: bit(req.body?.excluir_reserva_carro),
       gestao_usuarios: bit(req.body?.gestao_usuarios),
       gestao_usuarios_cadastro: bit(req.body?.gestao_usuarios_cadastro),
@@ -6648,6 +6654,7 @@ app.put('/api/perfis/:id', async (req, res) => {
         agendar_sala_reuniao = ?,
         excluir_agendamento_sala_reuniao = ?,
         reservar_carro = ?,
+        aprovar_reserva_carro = ?,
         excluir_reserva_carro = ?,
         gestao_usuarios = ?,
         gestao_usuarios_cadastro = ?,
@@ -6680,6 +6687,7 @@ app.put('/api/perfis/:id', async (req, res) => {
       depois.agendar_sala_reuniao,
       depois.excluir_agendamento_sala_reuniao,
       depois.reservar_carro,
+      depois.aprovar_reserva_carro,
       depois.excluir_reserva_carro,
       depois.gestao_usuarios,
       depois.gestao_usuarios_cadastro,
@@ -7277,7 +7285,10 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
         observacoes,
         usuario_solicitante,
         data_solicitacao,
-        status_solicitacao
+        status_solicitacao,
+        motivo_recusa,
+        usuario_recusa,
+        data_recusa
       FROM SF_RESERVA_CARRO
       WHERE id = ?
       LIMIT 1
@@ -7420,7 +7431,20 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
 
     conn = await pool.getConnection();
 
-    const [rows] = await conn.query(`
+    const [permissaoRows] = await conn.query(`
+      SELECT
+        COALESCE(p.aprovar_reserva_carro, 0) AS aprovar_reserva_carro
+      FROM SF_USUARIOS u
+      LEFT JOIN SF_PERMISSOES p
+        ON p.id = u.permissao_id
+      WHERE UPPER(TRIM(u.usuario)) = UPPER(TRIM(?))
+      LIMIT 1
+    `, [usuarioSolicitante]);
+
+    const podeAprovarReservaCarro =
+      Number(permissaoRows?.[0]?.aprovar_reserva_carro || 0) === 1;
+
+    let sql = `
       SELECT
         rc.id,
         rc.tipo_veiculo,
@@ -7437,7 +7461,18 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
         ON rcd.reserva_id = rc.id
       LEFT JOIN SF_LOCAL_TRABALHO lt
         ON lt.id = rcd.local_trabalho_id
-      WHERE UPPER(TRIM(rc.usuario_solicitante)) = UPPER(TRIM(?))
+    `;
+
+    const params = [];
+
+    if (!podeAprovarReservaCarro) {
+      sql += `
+        WHERE UPPER(TRIM(rc.usuario_solicitante)) = UPPER(TRIM(?))
+      `;
+      params.push(usuarioSolicitante);
+    }
+
+    sql += `
       GROUP BY
         rc.id,
         rc.tipo_veiculo,
@@ -7449,10 +7484,13 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
         rc.data_solicitacao,
         rc.status_solicitacao
       ORDER BY rc.id DESC
-    `, [usuarioSolicitante]);
+    `;
+
+    const [rows] = await conn.query(sql, params);
 
     return res.json({
       success: true,
+      podeAprovarReservaCarro,
       items: rows
     });
 
@@ -7636,12 +7674,33 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
   let conn;
 
   try {
+
+    const fotoFrente = normalizarTexto(req.body?.fotoFrente);
+    const fotoTraseira = normalizarTexto(req.body?.fotoTraseira);
+    const fotoLateralEsquerda = normalizarTexto(req.body?.fotoLateralEsquerda);
+    const fotoLateralDireita = normalizarTexto(req.body?.fotoLateralDireita);
+    const fotoPainel = normalizarTexto(req.body?.fotoPainel);
+
+    if (!fotoFrente || !fotoTraseira || !fotoLateralEsquerda || !fotoLateralDireita || !fotoPainel) {
+      return res.status(400).json({
+        success: false,
+        message: 'É obrigatório tirar as 5 fotos do veículo no momento da aprovação.'
+      });
+    }
+
     const idReserva = Number(req.params.id);
     const usuarioAprovacao = normalizarTexto(
       req.body?.usuarioAprovacao ||
       req.headers['x-usuario'] ||
       req.headers['x-user']
     );
+
+    const veiculoId = Number(req.body?.veiculoId || 0);
+    const kmSaida = req.body?.kmSaida !== undefined && req.body?.kmSaida !== null && req.body?.kmSaida !== ''
+      ? Number(req.body.kmSaida)
+      : null;
+    const nivelCombustivelSaida = normalizarTexto(req.body?.nivelCombustivelSaida);
+    const checklistSaida = req.body?.checklistSaida || {};
 
     if (!idReserva) {
       return res.status(400).json({
@@ -7653,7 +7712,14 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
     if (!usuarioAprovacao) {
       return res.status(400).json({
         success: false,
-        message: 'Informe o usuário que está aprovando a reserva.'
+        message: 'Usuário de aprovação não informado.'
+      });
+    }
+
+    if (!veiculoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione um veículo para aprovar a reserva.'
       });
     }
 
@@ -7664,7 +7730,8 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
     const [rowsReserva] = await conn.query(`
       SELECT
         id,
-        status_solicitacao
+        status_solicitacao,
+        previsao_devolucao
       FROM SF_RESERVA_CARRO
       WHERE id = ?
       LIMIT 1
@@ -7688,11 +7755,10 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
       });
     }
 
-    const [usuarioRows] = await conn.query(`
+    const [rowsUsuario] = await conn.query(`
       SELECT
         u.ID,
         u.NOME,
-        u.PERFIL,
         p.aprovar_reserva_carro
       FROM SF_USUARIO u
       LEFT JOIN SF_PERFIL p
@@ -7701,22 +7767,72 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
       LIMIT 1
     `, [usuarioAprovacao]);
 
-    if (!usuarioRows.length) {
+    const usuarioPermissao = rowsUsuario?.[0];
+
+    if (!usuarioPermissao || Number(usuarioPermissao.aprovar_reserva_carro || 0) !== 1) {
       await conn.rollback();
       return res.status(403).json({
         success: false,
-        message: 'Usuário solicitante não encontrado ou sem perfil válido.'
+        message: 'Você não tem permissão para aprovar reservas de carro.'
       });
     }
 
-    const usuarioDb = usuarioRows[0];
-    const podeAprovar = Number(usuarioDb.aprovar_reserva_carro) === 1;
+    const [rowsVeiculo] = await conn.query(`
+      SELECT
+        id,
+        placa,
+        modelo,
+        status_veiculo,
+        ativo,
+        km_atual
+      FROM SF_VEICULOS
+      WHERE id = ?
+      LIMIT 1
+    `, [veiculoId]);
 
-    if (!podeAprovar) {
+    const veiculo = rowsVeiculo?.[0];
+
+    if (!veiculo) {
       await conn.rollback();
-      return res.status(403).json({
+      return res.status(404).json({
         success: false,
-        message: 'Você não tem permissão para aprovar esta reserva.'
+        message: 'Veículo não encontrado.'
+      });
+    }
+
+    if (Number(veiculo.ativo || 0) !== 1) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'O veículo selecionado está inativo.'
+      });
+    }
+
+    if (normalizarStatusReserva(veiculo.status_veiculo) === 'MANUTENCAO') {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'O veículo selecionado está em manutenção.'
+      });
+    }
+
+    const [rowsConflito] = await conn.query(`
+      SELECT
+        id,
+        previsao_devolucao
+      FROM SF_RESERVA_CARRO
+      WHERE veiculo_id = ?
+        AND id <> ?
+        AND UPPER(TRIM(status_solicitacao)) = 'APROVADA'
+        AND previsao_devolucao >= NOW()
+      LIMIT 1
+    `, [veiculoId, idReserva]);
+
+    if (rowsConflito.length) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'O veículo selecionado está em uso e ainda não retornou.'
       });
     }
 
@@ -7728,15 +7844,45 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
         data_aprovacao = NOW(),
         motivo_recusa = NULL,
         usuario_recusa = NULL,
-        data_recusa = NULL
+        data_recusa = NULL,
+        veiculo_id = ?,
+        checklist_saida = ?,
+        km_saida = ?,
+        nivel_combustivel_saida = ?,
+        foto_frente = ?,
+        foto_traseira = ?,
+        foto_lateral_esquerda = ?,
+        foto_lateral_direita = ?,
+        foto_painel = ?
       WHERE id = ?
-    `, [usuarioAprovacao, idReserva]);
+    `, [
+      usuarioAprovacao,
+      veiculoId,
+      JSON.stringify(checklistSaida || {}),
+      kmSaida,
+      nivelCombustivelSaida || null,
+      fotoFrente,
+      fotoTraseira,
+      fotoLateralEsquerda,
+      fotoLateralDireita,
+      fotoPainel,
+      idReserva
+    ]);
+
+
+    await conn.query(`
+      UPDATE SF_VEICULOS
+      SET
+        status_veiculo = 'EM_USO',
+        km_atual = COALESCE(?, km_atual)
+      WHERE id = ?
+    `, [kmSaida, veiculoId]);
 
     await conn.commit();
 
     return res.json({
       success: true,
-      message: 'Reserva aprovada com sucesso.'
+      message: 'Reserva aprovada com sucesso e veículo associado.'
     });
   } catch (err) {
     if (conn) {
@@ -7753,6 +7899,7 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
     if (conn) conn.release();
   }
 });
+
 
 app.post('/api/reservas-carro/:id/recusar', async (req, res) => {
   let conn;
@@ -8014,6 +8161,651 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Erro ao excluir reserva.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/permissoes/aprovar-reserva-carro/:usuarioId', async (req, res) => {
+  let conn;
+
+  try {
+    const usuarioId = Number(req.params.usuarioId);
+
+    if (!usuarioId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um usuário válido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT
+        u.ID AS id_usuario,
+        u.NOME AS nome_usuario,
+        u.PERFIL AS perfil_usuario,
+        p.id AS id_perfil,
+        p.nome AS nome_perfil,
+        COALESCE(p.aprovar_reserva_carro, 0) AS aprovarreservacarro
+      FROM SF_USUARIO u
+      LEFT JOIN SF_PERFIL p
+        ON UPPER(TRIM(p.nome)) = UPPER(TRIM(u.PERFIL))
+      WHERE u.ID = ?
+      LIMIT 1
+    `, [usuarioId]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuário não encontrado.'
+      });
+    }
+
+    const item = rows[0];
+
+    return res.json({
+      success: true,
+      item: {
+        idusuario: item.id_usuario,
+        nomeusuario: item.nome_usuario,
+        perfilusuario: item.perfil_usuario,
+        idperfil: item.id_perfil,
+        nomeperfil: item.nome_perfil,
+        aprovarreservacarro: Number(item.aprovarreservacarro) === 1 ? 1 : 0
+      }
+    });
+  } catch (err) {
+    console.error('Erro ao validar permissão de aprovar/recusar reserva de carro:', err);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao validar permissão.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+
+// Cadastro de Veiculos e Utilização de Veículos
+
+app.get('/api/reservas-carro/:id/veiculos-disponiveis', async (req, res) => {
+  let conn;
+
+  try {
+    const idReserva = Number(req.params.id);
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [rowsReserva] = await conn.query(`
+      SELECT
+        id,
+        tipo_veiculo,
+        data_necessaria,
+        previsao_devolucao,
+        status_solicitacao
+      FROM SF_RESERVA_CARRO
+      WHERE id = ?
+      LIMIT 1
+    `, [idReserva]);
+
+    const reserva = rowsReserva?.[0];
+
+    if (!reserva) {
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    const [rows] = await conn.query(`
+      SELECT
+        v.id,
+        v.placa,
+        v.modelo,
+        v.marca,
+        v.cor,
+        v.ano,
+        v.km_atual,
+        v.status_veiculo,
+        v.ativo,
+        CASE
+          WHEN v.ativo <> 1 THEN 'INATIVO'
+          WHEN UPPER(TRIM(v.status_veiculo)) = 'MANUTENCAO' THEN 'MANUTENCAO'
+          WHEN EXISTS (
+            SELECT 1
+            FROM SF_RESERVA_CARRO rc
+            WHERE rc.veiculo_id = v.id
+              AND rc.id <> ?
+              AND UPPER(TRIM(rc.status_solicitacao)) = 'APROVADA'
+              AND rc.previsao_devolucao >= NOW()
+          ) THEN 'EM_USO'
+          ELSE 'DISPONIVEL'
+        END AS disponibilidade,
+        (
+          SELECT rc.previsao_devolucao
+          FROM SF_RESERVA_CARRO rc
+          WHERE rc.veiculo_id = v.id
+            AND rc.id <> ?
+            AND UPPER(TRIM(rc.status_solicitacao)) = 'APROVADA'
+            AND rc.previsao_devolucao >= NOW()
+          ORDER BY rc.previsao_devolucao ASC
+          LIMIT 1
+        ) AS previsao_retorno
+      FROM SF_VEICULOS v
+      WHERE v.ativo = 1
+      ORDER BY
+        CASE
+          WHEN UPPER(TRIM(v.status_veiculo)) = 'MANUTENCAO' THEN 3
+          WHEN EXISTS (
+            SELECT 1
+            FROM SF_RESERVA_CARRO rc
+            WHERE rc.veiculo_id = v.id
+              AND rc.id <> ?
+              AND UPPER(TRIM(rc.status_solicitacao)) = 'APROVADA'
+              AND rc.previsao_devolucao >= NOW()
+          ) THEN 2
+          ELSE 1
+        END,
+        v.modelo,
+        v.placa
+    `, [idReserva, idReserva, idReserva]);
+
+    return res.json({
+      success: true,
+      reserva: {
+        id: reserva.id,
+        tipoVeiculo: reserva.tipo_veiculo,
+        dataNecessaria: reserva.data_necessaria,
+        previsaoDevolucao: reserva.previsao_devolucao,
+        statusSolicitacao: reserva.status_solicitacao
+      },
+      items: rows
+    });
+  } catch (err) {
+    console.error('Erro ao listar veículos disponíveis:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar veículos disponíveis.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+function normalizarTextoVeiculos(value) {
+  return String(value ?? '').trim();
+}
+
+function normalizarTextoVeiculosUpper(value) {
+  return normalizarTextoVeiculos(value).toUpperCase();
+}
+
+function normalizarStatusVeiculo(value) {
+  const status = normalizarTextoVeiculosUpper(value)
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Z_]/g, '');
+
+  if (status === 'EMUSO') return 'EM_USO';
+  if (status === 'EM_USO') return 'EM_USO';
+  if (status === 'MANUTENCAO') return 'MANUTENCAO';
+  if (status === 'DISPONIVEL') return 'DISPONIVEL';
+
+  return status || 'DISPONIVEL';
+}
+
+app.get('/api/veiculos', async (req, res) => {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT
+        id,
+        placa,
+        modelo,
+        marca,
+        cor,
+        ano,
+        km_atual,
+        status_veiculo,
+        ativo,
+        observacoes,
+        created_at,
+        updated_at
+      FROM SF_VEICULOS
+      ORDER BY ativo DESC, modelo ASC, placa ASC
+    `);
+
+    return res.json({
+      success: true,
+      items: rows
+    });
+  } catch (err) {
+    console.error('Erro ao listar veículos:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar veículos.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/veiculos/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const idVeiculo = Number(req.params.id);
+
+    if (!idVeiculo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de veículo válido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT
+        id,
+        placa,
+        modelo,
+        marca,
+        cor,
+        ano,
+        km_atual,
+        status_veiculo,
+        ativo,
+        observacoes,
+        created_at,
+        updated_at
+      FROM SF_VEICULOS
+      WHERE id = ?
+      LIMIT 1
+    `, [idVeiculo]);
+
+    const item = rows?.[0];
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Veículo não encontrado.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      item
+    });
+  } catch (err) {
+    console.error('Erro ao buscar veículo:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar veículo.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/veiculos', async (req, res) => {
+  let conn;
+
+  try {
+    const placa = normalizarTextoVeiculosUpper(req.body?.placa).replace(/[^A-Z0-9]/g, '');
+    const modelo = normalizarTextoVeiculos(req.body?.modelo);
+    const marca = normalizarTextoVeiculos(req.body?.marca);
+    const cor = normalizarTextoVeiculos(req.body?.cor);
+    const ano = req.body?.ano !== undefined && req.body?.ano !== null && req.body?.ano !== ''
+      ? Number(req.body.ano)
+      : null;
+    const kmAtual = req.body?.kmAtual !== undefined && req.body?.kmAtual !== null && req.body?.kmAtual !== ''
+      ? Number(req.body.kmAtual)
+      : null;
+    const statusVeiculo = normalizarStatusVeiculo(req.body?.statusVeiculo);
+    const ativo = Number(req.body?.ativo ?? 1) === 1 ? 1 : 0;
+    const observacoes = normalizarTextoVeiculos(req.body?.observacoes);
+
+    if (!placa) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a placa do veículo.'
+      });
+    }
+
+    if (!modelo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o modelo do veículo.'
+      });
+    }
+
+    if (ano !== null && (!Number.isInteger(ano) || ano < 1900 || ano > 2100)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um ano válido.'
+      });
+    }
+
+    if (kmAtual !== null && (!Number.isFinite(kmAtual) || kmAtual < 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe uma quilometragem válida.'
+      });
+    }
+
+    if (!['DISPONIVEL', 'EM_USO', 'MANUTENCAO'].includes(statusVeiculo)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status do veículo inválido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [rowsPlaca] = await conn.query(`
+      SELECT id
+      FROM SF_VEICULOS
+      WHERE UPPER(REPLACE(TRIM(placa), '-', '')) = ?
+      LIMIT 1
+    `, [placa]);
+
+    if (rowsPlaca.length) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Já existe um veículo cadastrado com esta placa.'
+      });
+    }
+
+    const [result] = await conn.query(`
+      INSERT INTO SF_VEICULOS (
+        placa,
+        modelo,
+        marca,
+        cor,
+        ano,
+        km_atual,
+        status_veiculo,
+        ativo,
+        observacoes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      placa,
+      modelo,
+      marca || null,
+      cor || null,
+      ano,
+      kmAtual,
+      statusVeiculo,
+      ativo,
+      observacoes || null
+    ]);
+
+    await conn.commit();
+
+    return res.status(201).json({
+      success: true,
+      message: 'Veículo cadastrado com sucesso.',
+      id: result.insertId
+    });
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao cadastrar veículo:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao cadastrar veículo.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/veiculos/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const idVeiculo = Number(req.params.id);
+    const placa = normalizarTextoVeiculosUpper(req.body?.placa).replace(/[^A-Z0-9]/g, '');
+    const modelo = normalizarTextoVeiculos(req.body?.modelo);
+    const marca = normalizarTextoVeiculos(req.body?.marca);
+    const cor = normalizarTextoVeiculos(req.body?.cor);
+    const ano = req.body?.ano !== undefined && req.body?.ano !== null && req.body?.ano !== ''
+      ? Number(req.body.ano)
+      : null;
+    const kmAtual = req.body?.kmAtual !== undefined && req.body?.kmAtual !== null && req.body?.kmAtual !== ''
+      ? Number(req.body.kmAtual)
+      : null;
+    const statusVeiculo = normalizarStatusVeiculo(req.body?.statusVeiculo);
+    const ativo = Number(req.body?.ativo ?? 1) === 1 ? 1 : 0;
+    const observacoes = normalizarTextoVeiculos(req.body?.observacoes);
+
+    if (!idVeiculo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de veículo válido.'
+      });
+    }
+
+    if (!placa) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a placa do veículo.'
+      });
+    }
+
+    if (!modelo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o modelo do veículo.'
+      });
+    }
+
+    if (ano !== null && (!Number.isInteger(ano) || ano < 1900 || ano > 2100)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um ano válido.'
+      });
+    }
+
+    if (kmAtual !== null && (!Number.isFinite(kmAtual) || kmAtual < 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe uma quilometragem válida.'
+      });
+    }
+
+    if (!['DISPONIVEL', 'EM_USO', 'MANUTENCAO'].includes(statusVeiculo)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status do veículo inválido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [rowsExistente] = await conn.query(`
+      SELECT id
+      FROM SF_VEICULOS
+      WHERE id = ?
+      LIMIT 1
+    `, [idVeiculo]);
+
+    if (!rowsExistente.length) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Veículo não encontrado.'
+      });
+    }
+
+    const [rowsPlaca] = await conn.query(`
+      SELECT id
+      FROM SF_VEICULOS
+      WHERE UPPER(REPLACE(TRIM(placa), '-', '')) = ?
+        AND id <> ?
+      LIMIT 1
+    `, [placa, idVeiculo]);
+
+    if (rowsPlaca.length) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Já existe outro veículo cadastrado com esta placa.'
+      });
+    }
+
+    await conn.query(`
+      UPDATE SF_VEICULOS
+      SET
+        placa = ?,
+        modelo = ?,
+        marca = ?,
+        cor = ?,
+        ano = ?,
+        km_atual = ?,
+        status_veiculo = ?,
+        ativo = ?,
+        observacoes = ?
+      WHERE id = ?
+    `, [
+      placa,
+      modelo,
+      marca || null,
+      cor || null,
+      ano,
+      kmAtual,
+      statusVeiculo,
+      ativo,
+      observacoes || null,
+      idVeiculo
+    ]);
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Veículo atualizado com sucesso.'
+    });
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao atualizar veículo:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar veículo.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.delete('/api/veiculos/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const idVeiculo = Number(req.params.id);
+
+    if (!idVeiculo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de veículo válido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [rowsVeiculo] = await conn.query(`
+      SELECT
+        id,
+        modelo,
+        placa,
+        status_veiculo
+      FROM SF_VEICULOS
+      WHERE id = ?
+      LIMIT 1
+    `, [idVeiculo]);
+
+    const veiculo = rowsVeiculo?.[0];
+
+    if (!veiculo) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Veículo não encontrado.'
+      });
+    }
+
+    const [rowsReservaAberta] = await conn.query(`
+      SELECT id
+      FROM SF_RESERVA_CARRO
+      WHERE veiculo_id = ?
+        AND UPPER(TRIM(status_solicitacao)) = 'APROVADA'
+        AND previsao_devolucao >= NOW()
+      LIMIT 1
+    `, [idVeiculo]);
+
+    if (rowsReservaAberta.length) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'O veículo possui reserva aprovada em aberto e não pode ser excluído.'
+      });
+    }
+
+    await conn.query(`
+      DELETE FROM SF_VEICULOS
+      WHERE id = ?
+    `, [idVeiculo]);
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Veículo excluído com sucesso.',
+      item: {
+        id: veiculo.id,
+        modelo: veiculo.modelo,
+        placa: veiculo.placa
+      }
+    });
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao excluir veículo:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir veículo.',
       error: err.message
     });
   } finally {
