@@ -723,6 +723,7 @@ app.get('/api/usuarios', async (req, res) => {
       `SELECT id, nome, email, setor
          FROM SF_USUARIO
         WHERE email IS NOT NULL AND email <> ''
+        AND status <> 'Desativado'
         ORDER BY nome ASC`
     );
     res.json({ success: true, items: rows });
