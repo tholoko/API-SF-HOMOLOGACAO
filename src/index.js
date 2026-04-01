@@ -2087,15 +2087,6 @@ app.get('/api/marketing/painel', async (req, res) => {
     const apenasUmaVez = Number(item.APENASUMAVEZ || 0) === 1;
     const jaExibido = !!item.ULTIMAEXIBICAOEM;
 
-    console.log('[MARKETING/FILTER]', {
-      id: item.ID,
-      inicio,
-      fim,
-      hojeStr,
-      rec,
-      apenasUmaVez,
-      jaExibido
-    });
 
     if (inicio && hojeStr < inicio) return false;
     if (fim && hojeStr > fim) return false;
@@ -2130,9 +2121,6 @@ app.get('/api/marketing/painel', async (req, res) => {
   });
 
 
-    console.log('[MARKETING/PAINEL] rows=', rows);
-    console.log('[MARKETING/PAINEL] hoje=', hojeStr);
-    console.log('[MARKETING/PAINEL] ativos=', ativos);
 
     return res.json({
       success: true,
@@ -6870,7 +6858,8 @@ app.get('/api/permissoes/menu/:usuarioId', async (req, res) => {
         COALESCE(p.email_automaticos, 0) AS email_automaticos,
         COALESCE(p.gestao_usuarios, 0) AS gestao_usuarios,
         COALESCE(p.estoque, 0) AS estoque,
-        COALESCE(p.perfil_acesso, 0) AS perfil_acesso
+        COALESCE(p.perfil_acesso, 0) AS perfil_acesso,
+        COALESCE(p.reservar_carro, 0) AS reservar_carro
       FROM SF_USUARIO u
       LEFT JOIN SF_PERFIL p ON p.nome = u.perfil
       WHERE u.ID = ?
@@ -6900,7 +6889,8 @@ app.get('/api/permissoes/menu/:usuarioId', async (req, res) => {
         emailautomaticos: Number(item.email_automaticos ?? 0),
         gestaousuarios: Number(item.gestao_usuarios ?? 0),
         estoque: Number(item.estoque ?? 0),
-        perfilacesso: Number(item.perfil_acesso ?? 0)
+        perfilacesso: Number(item.perfil_acesso ?? 0),
+        reservarcarro: Number(item.reservar_carro ?? 0)
       }
     };
 
@@ -7366,15 +7356,30 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
         rc.usuario_aprovacao,
         rc.data_aprovacao,
         rc.veiculo_id,
+
         rc.checklist_saida,
         rc.km_saida,
-        rc.km_devolucao,
         rc.nivel_combustivel_saida,
         rc.foto_frente,
         rc.foto_traseira,
         rc.foto_lateral_esquerda,
         rc.foto_lateral_direita,
         rc.foto_painel,
+
+        rc.checklist_devolucao,
+        rc.km_devolucao,
+        rc.nivel_combustivel_devolucao,
+        rc.observacoes_devolucao,
+        rc.foto_devolucao_frente,
+        rc.foto_devolucao_traseira,
+        rc.foto_devolucao_lateral_esquerda,
+        rc.foto_devolucao_lateral_direita,
+        rc.foto_devolucao_painel,
+        rc.usuario_devolucao,
+        rc.data_devolucao,
+        rc.usuario_confirmacao_devolucao,
+        rc.data_confirmacao_devolucao,
+
         v.placa AS veiculo_placa,
         v.modelo AS veiculo_modelo,
         v.marca AS veiculo_marca,
@@ -7389,6 +7394,7 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
     `, [idReserva]);
 
     const reserva = rowsReserva?.[0];
+
     if (!reserva) {
       return res.status(404).json({
         success: false,
@@ -7408,6 +7414,8 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
     `, [idReserva]);
 
     let checklistSaida = {};
+    let checklistDevolucao = {};
+
     try {
       checklistSaida = reserva.checklist_saida
         ? JSON.parse(reserva.checklist_saida)
@@ -7416,11 +7424,20 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
       checklistSaida = {};
     }
 
+    try {
+      checklistDevolucao = reserva.checklist_devolucao
+        ? JSON.parse(reserva.checklist_devolucao)
+        : {};
+    } catch (_) {
+      checklistDevolucao = {};
+    }
+
     return res.json({
       success: true,
       item: {
         ...reserva,
         checklist_saida: checklistSaida,
+        checklist_devolucao: checklistDevolucao,
         destinos: rowsDestinos
       }
     });
