@@ -7107,8 +7107,6 @@ async function validarConflitoReservaCarro(conn, {
   return rows?.[0] || null;
 }
 
-
-
 function datetimeLocalToMysql(v) {
   const s = String(v || '').trim();
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
@@ -9210,10 +9208,9 @@ app.delete('/api/veiculos/:id', async (req, res) => {
 
 // Cadastro Organograma
 
-
 app.get('/api/local-trabalho', async (req, res) => {
   try {
-    const [rows] = await db.query(`
+    const [rows] = await conn.query(`
       SELECT
         id,
         nome,
@@ -9249,7 +9246,7 @@ app.get('/api/organograma', async (req, res) => {
 
     const where = filtros.length ? `WHERE ${filtros.join(' AND ')}` : '';
 
-    const [rows] = await db.query(`
+    const [rows] = await conn.query(`
       SELECT
         o.id,
         o.id_local_trabalho,
@@ -9297,7 +9294,7 @@ app.post('/api/organograma', async (req, res) => {
       });
     }
 
-    const [localExiste] = await db.query(
+    const [localExiste] = await conn.query(
       'SELECT id FROM SF_LOCAL_TRABALHO WHERE id = ? LIMIT 1',
       [Number(id_local_trabalho)]
     );
@@ -9306,7 +9303,7 @@ app.post('/api/organograma', async (req, res) => {
       return res.status(404).json({ error: 'Local de trabalho não encontrado.' });
     }
 
-    const [setorPaiExiste] = await db.query(
+    const [setorPaiExiste] = await conn.query(
       'SELECT id FROM SF_SETOR WHERE id = ? LIMIT 1',
       [Number(id_setor_pai)]
     );
@@ -9315,7 +9312,7 @@ app.post('/api/organograma', async (req, res) => {
       return res.status(404).json({ error: 'Setor pai não encontrado.' });
     }
 
-    const [setorFilhoExiste] = await db.query(
+    const [setorFilhoExiste] = await conn.query(
       'SELECT id FROM SF_SETOR WHERE id = ? LIMIT 1',
       [Number(id_setor_filho)]
     );
@@ -9324,7 +9321,7 @@ app.post('/api/organograma', async (req, res) => {
       return res.status(404).json({ error: 'Setor filho não encontrado.' });
     }
 
-    const [duplicado] = await db.query(`
+    const [duplicado] = await conn.query(`
       SELECT id
       FROM SF_ORGANOGRAMA
       WHERE id_local_trabalho = ?
@@ -9341,7 +9338,7 @@ app.post('/api/organograma', async (req, res) => {
       return res.status(409).json({ error: 'Este vínculo já está cadastrado.' });
     }
 
-    const [result] = await db.query(`
+    const [result] = await conn.query(`
       INSERT INTO SF_ORGANOGRAMA (
         id_local_trabalho,
         id_setor_pai,
@@ -9355,7 +9352,7 @@ app.post('/api/organograma', async (req, res) => {
       Number(status) ? 1 : 0
     ]);
 
-    const [novoRegistro] = await db.query(`
+    const [novoRegistro] = await conn.query(`
       SELECT
         o.id,
         o.id_local_trabalho,
@@ -9413,7 +9410,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    const [registroAtual] = await db.query(
+    const [registroAtual] = await conn.query(
       'SELECT id FROM SF_ORGANOGRAMA WHERE id = ? LIMIT 1',
       [id]
     );
@@ -9422,7 +9419,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       return res.status(404).json({ error: 'Vínculo não encontrado.' });
     }
 
-    const [duplicado] = await db.query(`
+    const [duplicado] = await conn.query(`
       SELECT id
       FROM SF_ORGANOGRAMA
       WHERE id_local_trabalho = ?
@@ -9441,7 +9438,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       return res.status(409).json({ error: 'Já existe outro vínculo com esses dados.' });
     }
 
-    await db.query(`
+    await conn.query(`
       UPDATE SF_ORGANOGRAMA
       SET
         id_local_trabalho = ?,
@@ -9457,7 +9454,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       id
     ]);
 
-    const [registroAtualizado] = await db.query(`
+    const [registroAtualizado] = await conn.query(`
       SELECT
         o.id,
         o.id_local_trabalho,
@@ -9497,7 +9494,7 @@ app.delete('/api/organograma/:id', async (req, res) => {
       return res.status(400).json({ error: 'ID inválido.' });
     }
 
-    const [registro] = await db.query(
+    const [registro] = await conn.query(
       'SELECT id FROM SF_ORGANOGRAMA WHERE id = ? LIMIT 1',
       [id]
     );
@@ -9506,7 +9503,7 @@ app.delete('/api/organograma/:id', async (req, res) => {
       return res.status(404).json({ error: 'Vínculo não encontrado.' });
     }
 
-    await db.query('DELETE FROM SF_ORGANOGRAMA WHERE id = ?', [id]);
+    await conn.query('DELETE FROM SF_ORGANOGRAMA WHERE id = ?', [id]);
 
     res.json({ success: true, message: 'Vínculo excluído com sucesso.' });
   } catch (error) {
