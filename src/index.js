@@ -9209,7 +9209,11 @@ app.delete('/api/veiculos/:id', async (req, res) => {
 // Cadastro Organograma
 
 app.get('/api/local-trabalho', async (req, res) => {
+  let conn;
+
   try {
+    conn = await pool.getConnection();
+
     const [rows] = await conn.query(`
       SELECT
         id,
@@ -9220,15 +9224,22 @@ app.get('/api/local-trabalho', async (req, res) => {
       ORDER BY nome ASC
     `);
 
-    res.json(rows);
+    return res.json(rows);
   } catch (error) {
     console.error('Erro ao listar locais de trabalho:', error);
-    res.status(500).json({ error: 'Erro ao listar locais de trabalho.' });
+    return res.status(500).json({ error: 'Erro ao listar locais de trabalho.' });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
+
 app.get('/api/organograma', async (req, res) => {
+  let conn;
+
   try {
+    conn = await pool.getConnection();
+
     const { id_local_trabalho, status } = req.query;
 
     const filtros = [];
@@ -9266,15 +9277,22 @@ app.get('/api/organograma', async (req, res) => {
       ORDER BY lt.nome ASC, sp.nome ASC, sf.nome ASC
     `, params);
 
-    res.json(rows);
+    return res.json(rows);
   } catch (error) {
     console.error('Erro ao listar organograma:', error);
-    res.status(500).json({ error: 'Erro ao listar organograma.' });
+    return res.status(500).json({ error: 'Erro ao listar organograma.' });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
+
 app.post('/api/organograma', async (req, res) => {
+  let conn;
+
   try {
+    conn = await pool.getConnection();
+
     const {
       id_local_trabalho,
       id_setor_pai,
@@ -9372,7 +9390,7 @@ app.post('/api/organograma', async (req, res) => {
       LIMIT 1
     `, [result.insertId]);
 
-    res.status(201).json(novoRegistro[0]);
+    return res.status(201).json(novoRegistro[0]);
   } catch (error) {
     console.error('Erro ao criar vínculo do organograma:', error);
 
@@ -9380,12 +9398,19 @@ app.post('/api/organograma', async (req, res) => {
       return res.status(409).json({ error: 'Este vínculo já está cadastrado.' });
     }
 
-    res.status(500).json({ error: 'Erro ao criar vínculo do organograma.' });
+    return res.status(500).json({ error: 'Erro ao criar vínculo do organograma.' });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
+
 app.put('/api/organograma/:id', async (req, res) => {
+  let conn;
+
   try {
+    conn = await pool.getConnection();
+
     const id = Number(req.params.id);
     const {
       id_local_trabalho,
@@ -9474,7 +9499,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       LIMIT 1
     `, [id]);
 
-    res.json(registroAtualizado[0]);
+    return res.json(registroAtualizado[0]);
   } catch (error) {
     console.error('Erro ao atualizar vínculo do organograma:', error);
 
@@ -9482,12 +9507,19 @@ app.put('/api/organograma/:id', async (req, res) => {
       return res.status(409).json({ error: 'Já existe outro vínculo com esses dados.' });
     }
 
-    res.status(500).json({ error: 'Erro ao atualizar vínculo do organograma.' });
+    return res.status(500).json({ error: 'Erro ao atualizar vínculo do organograma.' });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
+
 app.delete('/api/organograma/:id', async (req, res) => {
+  let conn;
+
   try {
+    conn = await pool.getConnection();
+
     const id = Number(req.params.id);
 
     if (!id) {
@@ -9505,10 +9537,12 @@ app.delete('/api/organograma/:id', async (req, res) => {
 
     await conn.query('DELETE FROM SF_ORGANOGRAMA WHERE id = ?', [id]);
 
-    res.json({ success: true, message: 'Vínculo excluído com sucesso.' });
+    return res.json({ success: true, message: 'Vínculo excluído com sucesso.' });
   } catch (error) {
     console.error('Erro ao excluir vínculo do organograma:', error);
-    res.status(500).json({ error: 'Erro ao excluir vínculo do organograma.' });
+    return res.status(500).json({ error: 'Erro ao excluir vínculo do organograma.' });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
