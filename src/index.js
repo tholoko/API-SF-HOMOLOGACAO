@@ -7107,36 +7107,7 @@ async function validarConflitoReservaCarro(conn, {
   return rows?.[0] || null;
 }
 
-app.get('/api/local-trabalho', async (req, res) => {
-  let conn;
 
-  try {
-    conn = await pool.getConnection();
-
-    const [rows] = await conn.query(`
-      SELECT
-        id,
-        nome
-      FROM SF_LOCAL_TRABALHO
-      ORDER BY nome
-    `);
-
-    return res.json({
-      success: true,
-      items: rows
-    });
-
-  } catch (err) {
-    console.error('Erro ao listar locais de trabalho:', err);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao listar locais de trabalho.',
-      error: err.message
-    });
-  } finally {
-    if (conn) conn.release();
-  }
-});
 
 function datetimeLocalToMysql(v) {
   const s = String(v || '').trim();
@@ -9236,6 +9207,313 @@ app.delete('/api/veiculos/:id', async (req, res) => {
   }
 });
 
+
+// Cadastro Organograma
+
+
+app.get('/api/local-trabalho', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        id,
+        nome,
+        endereco,
+        telefone
+      FROM SF_LOCAL_TRABALHO
+      ORDER BY nome ASC
+    `);
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao listar locais de trabalho:', error);
+    res.status(500).json({ error: 'Erro ao listar locais de trabalho.' });
+  }
+});
+
+app.get('/api/organograma', async (req, res) => {
+  try {
+    const { id_local_trabalho, status } = req.query;
+
+    const filtros = [];
+    const params = [];
+
+    if (id_local_trabalho) {
+      filtros.push('o.id_local_trabalho = ?');
+      params.push(Number(id_local_trabalho));
+    }
+
+    if (status !== undefined && status !== '') {
+      filtros.push('o.status = ?');
+      params.push(Number(status));
+    }
+
+    const where = filtros.length ? `WHERE ${filtros.join(' AND ')}` : '';
+
+    const [rows] = await db.query(`
+      SELECT
+        o.id,
+        o.id_local_trabalho,
+        lt.nome AS nome_local_trabalho,
+        o.id_setor_pai,
+        sp.nome AS nome_setor_pai,
+        o.id_setor_filho,
+        sf.nome AS nome_setor_filho,
+        o.status,
+        o.criado_em,
+        o.atualizado_em
+      FROM SF_ORGANOGRAMA o
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.id = o.id_local_trabalho
+      INNER JOIN SF_SETOR sp ON sp.id = o.id_setor_pai
+      INNER JOIN SF_SETOR sf ON sf.id = o.id_setor_filho
+      ${where}
+      ORDER BY lt.nome ASC, sp.nome ASC, sf.nome ASC
+    `, params);
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao listar organograma:', error);
+    res.status(500).json({ error: 'Erro ao listar organograma.' });
+  }
+});
+
+app.post('/api/organograma', async (req, res) => {
+  try {
+    const {
+      id_local_trabalho,
+      id_setor_pai,
+      id_setor_filho,
+      status = 1
+    } = req.body;
+
+    if (!id_local_trabalho || !id_setor_pai || !id_setor_filho) {
+      return res.status(400).json({
+        error: 'id_local_trabalho, id_setor_pai e id_setor_filho são obrigatórios.'
+      });
+    }
+
+    if (Number(id_setor_pai) === Number(id_setor_filho)) {
+      return res.status(400).json({
+        error: 'O setor pai não pode ser igual ao setor filho.'
+      });
+    }
+
+    const [localExiste] = await db.query(
+      'SELECT id FROM SF_LOCAL_TRABALHO WHERE id = ? LIMIT 1',
+      [Number(id_local_trabalho)]
+    );
+
+    if (!localExiste.length) {
+      return res.status(404).json({ error: 'Local de trabalho não encontrado.' });
+    }
+
+    const [setorPaiExiste] = await db.query(
+      'SELECT id FROM SF_SETOR WHERE id = ? LIMIT 1',
+      [Number(id_setor_pai)]
+    );
+
+    if (!setorPaiExiste.length) {
+      return res.status(404).json({ error: 'Setor pai não encontrado.' });
+    }
+
+    const [setorFilhoExiste] = await db.query(
+      'SELECT id FROM SF_SETOR WHERE id = ? LIMIT 1',
+      [Number(id_setor_filho)]
+    );
+
+    if (!setorFilhoExiste.length) {
+      return res.status(404).json({ error: 'Setor filho não encontrado.' });
+    }
+
+    const [duplicado] = await db.query(`
+      SELECT id
+      FROM SF_ORGANOGRAMA
+      WHERE id_local_trabalho = ?
+        AND id_setor_pai = ?
+        AND id_setor_filho = ?
+      LIMIT 1
+    `, [
+      Number(id_local_trabalho),
+      Number(id_setor_pai),
+      Number(id_setor_filho)
+    ]);
+
+    if (duplicado.length) {
+      return res.status(409).json({ error: 'Este vínculo já está cadastrado.' });
+    }
+
+    const [result] = await db.query(`
+      INSERT INTO SF_ORGANOGRAMA (
+        id_local_trabalho,
+        id_setor_pai,
+        id_setor_filho,
+        status
+      ) VALUES (?, ?, ?, ?)
+    `, [
+      Number(id_local_trabalho),
+      Number(id_setor_pai),
+      Number(id_setor_filho),
+      Number(status) ? 1 : 0
+    ]);
+
+    const [novoRegistro] = await db.query(`
+      SELECT
+        o.id,
+        o.id_local_trabalho,
+        lt.nome AS nome_local_trabalho,
+        o.id_setor_pai,
+        sp.nome AS nome_setor_pai,
+        o.id_setor_filho,
+        sf.nome AS nome_setor_filho,
+        o.status,
+        o.criado_em,
+        o.atualizado_em
+      FROM SF_ORGANOGRAMA o
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.id = o.id_local_trabalho
+      INNER JOIN SF_SETOR sp ON sp.id = o.id_setor_pai
+      INNER JOIN SF_SETOR sf ON sf.id = o.id_setor_filho
+      WHERE o.id = ?
+      LIMIT 1
+    `, [result.insertId]);
+
+    res.status(201).json(novoRegistro[0]);
+  } catch (error) {
+    console.error('Erro ao criar vínculo do organograma:', error);
+
+    if (error && error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Este vínculo já está cadastrado.' });
+    }
+
+    res.status(500).json({ error: 'Erro ao criar vínculo do organograma.' });
+  }
+});
+
+app.put('/api/organograma/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const {
+      id_local_trabalho,
+      id_setor_pai,
+      id_setor_filho,
+      status = 1
+    } = req.body;
+
+    if (!id) {
+      return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    if (!id_local_trabalho || !id_setor_pai || !id_setor_filho) {
+      return res.status(400).json({
+        error: 'id_local_trabalho, id_setor_pai e id_setor_filho são obrigatórios.'
+      });
+    }
+
+    if (Number(id_setor_pai) === Number(id_setor_filho)) {
+      return res.status(400).json({
+        error: 'O setor pai não pode ser igual ao setor filho.'
+      });
+    }
+
+    const [registroAtual] = await db.query(
+      'SELECT id FROM SF_ORGANOGRAMA WHERE id = ? LIMIT 1',
+      [id]
+    );
+
+    if (!registroAtual.length) {
+      return res.status(404).json({ error: 'Vínculo não encontrado.' });
+    }
+
+    const [duplicado] = await db.query(`
+      SELECT id
+      FROM SF_ORGANOGRAMA
+      WHERE id_local_trabalho = ?
+        AND id_setor_pai = ?
+        AND id_setor_filho = ?
+        AND id <> ?
+      LIMIT 1
+    `, [
+      Number(id_local_trabalho),
+      Number(id_setor_pai),
+      Number(id_setor_filho),
+      id
+    ]);
+
+    if (duplicado.length) {
+      return res.status(409).json({ error: 'Já existe outro vínculo com esses dados.' });
+    }
+
+    await db.query(`
+      UPDATE SF_ORGANOGRAMA
+      SET
+        id_local_trabalho = ?,
+        id_setor_pai = ?,
+        id_setor_filho = ?,
+        status = ?
+      WHERE id = ?
+    `, [
+      Number(id_local_trabalho),
+      Number(id_setor_pai),
+      Number(id_setor_filho),
+      Number(status) ? 1 : 0,
+      id
+    ]);
+
+    const [registroAtualizado] = await db.query(`
+      SELECT
+        o.id,
+        o.id_local_trabalho,
+        lt.nome AS nome_local_trabalho,
+        o.id_setor_pai,
+        sp.nome AS nome_setor_pai,
+        o.id_setor_filho,
+        sf.nome AS nome_setor_filho,
+        o.status,
+        o.criado_em,
+        o.atualizado_em
+      FROM SF_ORGANOGRAMA o
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.id = o.id_local_trabalho
+      INNER JOIN SF_SETOR sp ON sp.id = o.id_setor_pai
+      INNER JOIN SF_SETOR sf ON sf.id = o.id_setor_filho
+      WHERE o.id = ?
+      LIMIT 1
+    `, [id]);
+
+    res.json(registroAtualizado[0]);
+  } catch (error) {
+    console.error('Erro ao atualizar vínculo do organograma:', error);
+
+    if (error && error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Já existe outro vínculo com esses dados.' });
+    }
+
+    res.status(500).json({ error: 'Erro ao atualizar vínculo do organograma.' });
+  }
+});
+
+app.delete('/api/organograma/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    const [registro] = await db.query(
+      'SELECT id FROM SF_ORGANOGRAMA WHERE id = ? LIMIT 1',
+      [id]
+    );
+
+    if (!registro.length) {
+      return res.status(404).json({ error: 'Vínculo não encontrado.' });
+    }
+
+    await db.query('DELETE FROM SF_ORGANOGRAMA WHERE id = ?', [id]);
+
+    res.json({ success: true, message: 'Vínculo excluído com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao excluir vínculo do organograma:', error);
+    res.status(500).json({ error: 'Erro ao excluir vínculo do organograma.' });
+  }
+});
 
 
 
