@@ -9550,7 +9550,7 @@ app.delete('/api/organograma/:id', async (req, res) => {
 
 // Importar Usuarios via Template
 
-function somenteNumeros(v) {
+function somenteNumerosImportar(v) {
   return String(v ?? '').replace(/\D/g, '');
 }
 
@@ -9631,7 +9631,7 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
       const numeroLinha = i + 2;
 
       const nome = titleCaseNome(linha['NOME']);
-      const cpf = somenteNumeros(linha['CPF']);
+      const cpf = somenteNumerosImportar(linha['CPF']);
       const dataNascimento = excelDateToISO(linha['DATA NASCIMENTO']);
       const dataAdmissao = excelDateToISO(linha['DATA ADMISSÃO']);
       const funcao = texto(linha['FUNÇÃO']);
@@ -9734,6 +9734,7 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
     if (conn) conn.release();
   }
 });
+
 
 // =====================
 // Inicia servidor (sempre por último)
