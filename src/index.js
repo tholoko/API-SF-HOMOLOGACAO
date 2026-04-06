@@ -13,11 +13,14 @@ import multer from "multer";
 import fetch from 'node-fetch';
 import cron from 'node-cron';
 
+import XLSX from 'xlsx';
+
 dns.setDefaultResultOrder("ipv4first");
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const uploadMemoria = multer({ storage: multer.memoryStorage() });
 
 // =====================
 // Middleware base
@@ -1151,7 +1154,6 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     });
   }
 });
-
 
 app.get('/api/gestao-usuarios', async (req, res) => {
   try {
@@ -9546,7 +9548,192 @@ app.delete('/api/organograma/:id', async (req, res) => {
   }
 });
 
+// Importar Usuarios via Template
 
+function somenteNumeros(v) {
+  return String(v ?? '').replace(/\D/g, '');
+}
+
+function excelDateToISO(valor) {
+  if (!valor) return null;
+
+  if (typeof valor === 'number') {
+    const data = XLSX.SSF.parse_date_code(valor);
+    if (!data) return null;
+    const yyyy = String(data.y).padStart(4, '0');
+    const mm = String(data.m).padStart(2, '0');
+    const dd = String(data.d).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const s = String(valor).trim();
+  if (!s) return null;
+
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) {
+    const [, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return s.slice(0, 10);
+}
+
+async function obterOuCriarPorNome(conn, tabela, nome) {
+  const valor = texto(nome);
+  if (!valor) return null;
+
+  const [rows] = await conn.query(
+    `SELECT ID, NOME FROM ${tabela} WHERE UPPER(TRIM(NOME)) = UPPER(TRIM(?)) LIMIT 1`,
+    [valor]
+  );
+
+  if (rows.length) return rows[0];
+
+  const [result] = await conn.query(
+    `INSERT INTO ${tabela} (NOME) VALUES (?)`,
+    [valor]
+  );
+
+  return { ID: result.insertId, NOME: valor };
+}
+
+app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async (req, res) => {
+  let conn;
+
+  try {
+    if (!req.file?.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: 'Arquivo Excel é obrigatório.'
+      });
+    }
+
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const linhas = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    if (!linhas.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'A planilha está vazia.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const erros = [];
+    let inseridos = 0;
+    let ignorados = 0;
+
+    for (let i = 0; i < linhas.length; i++) {
+      const linha = linhas[i];
+      const numeroLinha = i + 2;
+
+      const nome = titleCaseNome(linha['NOME']);
+      const cpf = somenteNumeros(linha['CPF']);
+      const dataNascimento = excelDateToISO(linha['DATA NASCIMENTO']);
+      const dataAdmissao = excelDateToISO(linha['DATA ADMISSÃO']);
+      const funcao = texto(linha['FUNÇÃO']);
+      const setor = titleCaseNome(linha['SETOR']);
+      const perfil = texto(linha['PERFIL']);
+      const status = texto(linha['STATUS']) || 'Ativo';
+      const centroCusto = titleCaseNome(linha['CENTRO CUSTO']);
+      const unidadeTrabalho = titleCaseNome(linha['UNIDADE TRABALHO']);
+
+      if (!nome || !cpf || !dataNascimento || !setor || !perfil || !status) {
+        erros.push(`Linha ${numeroLinha}: campos obrigatórios ausentes.`);
+        continue;
+      }
+
+      const [cpfExistente] = await conn.query(
+        `SELECT ID FROM SF_USUARIO WHERE CPF = ? LIMIT 1`,
+        [cpf]
+      );
+
+      if (cpfExistente.length > 0) {
+        ignorados++;
+        continue;
+      }
+
+      if (setor) {
+        await obterOuCriarPorNome(conn, 'SFSETOR', setor);
+      }
+
+      if (funcao) {
+        await obterOuCriarPorNome(conn, 'SFFUNCAO', funcao);
+      }
+
+      if (unidadeTrabalho) {
+        await obterOuCriarPorNome(conn, 'SFLOCALTRABALHO', unidadeTrabalho);
+      }
+
+      if (centroCusto) {
+        await obterOuCriarPorNome(conn, 'SFCENTROCUSTO', centroCusto);
+      }
+
+      const emailGerado = `${cpf}@temp.local`;
+      const senhaHash = await bcrypt.hash('123456', 12);
+
+      await conn.query(`
+        INSERT INTO SF_USUARIO (
+          NOME,
+          EMAIL,
+          SENHA,
+          TELEFONE,
+          PERFIL,
+          SETOR,
+          FUNCAO,
+          DATA_ADMISSAO,
+          CENTRO_CUSTO,
+          LOCAL_TRABALHO,
+          STATUS,
+          CPF,
+          DATA_NASCIMENTO,
+          MUST_CHANGE_PASSWORD
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      `, [
+        nome,
+        emailGerado,
+        senhaHash,
+        null,
+        perfil,
+        setor,
+        funcao || null,
+        dataAdmissao,
+        centroCusto || null,
+        unidadeTrabalho || null,
+        status,
+        cpf,
+        dataNascimento
+      ]);
+
+      inseridos++;
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Importação concluída.',
+      inseridos,
+      ignorados,
+      erros
+    });
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch {}
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao importar planilha.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
 
 // =====================
 // Inicia servidor (sempre por último)
