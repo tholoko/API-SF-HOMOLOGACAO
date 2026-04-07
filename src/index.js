@@ -5521,7 +5521,7 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
       });
     }
 
-    const centroCustoUsuario = String(usuarioDb.LOCAL_TRABALHO ?? '').trim().toUpperCase();
+    const centroCustoUsuario = String(usuarioDb.CENTRO_CUSTO ?? '').trim().toUpperCase();
 
     if (!centroCustoUsuario) {
       return res.status(400).json({
