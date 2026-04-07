@@ -9720,7 +9720,7 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
           continue;
         }
 
-        const cpfExistente = await conn.query(
+        const [cpfExistente] = await conn.query(
           `SELECT ID, NOME, CPF FROM SF_USUARIO WHERE CPF = ? LIMIT 1`,
           [cpf]
         );
