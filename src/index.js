@@ -9580,10 +9580,10 @@ function excelDateToISO(valor) {
 }
 
 async function obterOuCriarPorNome(conn, tabela, nome) {
-  const valor = texto(nome);
+  const valor = titleCaseNome(nome || '');
   if (!valor) return null;
 
-  const rows = await conn.query(
+  const [rows] = await conn.query(
     `SELECT ID, NOME FROM ${tabela} WHERE UPPER(TRIM(NOME)) = UPPER(TRIM(?)) LIMIT 1`,
     [valor]
   );
@@ -9593,7 +9593,7 @@ async function obterOuCriarPorNome(conn, tabela, nome) {
     return rows[0];
   }
 
-  const result = await conn.query(
+  const [result] = await conn.query(
     `INSERT INTO ${tabela} (NOME) VALUES (?)`,
     [valor]
   );
