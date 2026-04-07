@@ -717,9 +717,6 @@ app.post('/api/gestao-usuarios-centro-custo', async (req, res) => {
   }
 });
 
-
-
-
 app.get('/api/usuarios', async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -2304,6 +2301,7 @@ app.put('/api/marketing/cards/:id', upload.single('file'), async (req, res) => {
 });
 
 
+// Cadastro CLientes
 
 function normalizarUF(uf) {
   const s = (uf || '').toString().trim().toUpperCase();
@@ -2940,14 +2938,14 @@ async function marcarEmailComoLidoOutlook(messageId) {
 }
 
 // todos os dias às 06:00
-cron.schedule('0 6 * * *', () => {
-  processarEmailsOffice365();
-});
+//cron.schedule('0 6 * * *', () => {
+  //processarEmailsOffice365();
+//});
 
 // todos os dias às 20:00
-cron.schedule('0 20 * * *', () => {
-  processarEmailsOffice365();
-});
+//cron.schedule('0 20 * * *', () => {
+  //processarEmailsOffice365();
+//});
 
 app.post('/cron/processar-emails-office365', async (req, res) => {
   processarEmailsOffice365()
@@ -3722,6 +3720,213 @@ app.post('/api/estoque/importacao-pdf/confirmar', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Erro ao confirmar importação do PDF.',
+      error: err.message
+    });
+  } finally {
+    conn.release();
+  }
+});
+
+app.post('/api/estoque/importacao-manual', async (req, res) => {
+  const conn = await pool.getConnection();
+
+  try {
+    const usuarioRegistro = textoLivre(req.body?.usuarioRegistro);
+    const local = textoLivre(req.body?.local).toUpperCase() || null;
+    const idLocalAlmoxarifado = Number(req.body?.idLocalAlmoxarifado) || null;
+    const itens = Array.isArray(req.body?.itens) ? req.body.itens : [];
+
+    if (!idLocalAlmoxarifado) {
+      return res.status(400).json({
+        success: false,
+        message: 'Local de armazenagem é obrigatório.'
+      });
+    }
+
+    if (!itens.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nenhum item informado para lançamento manual.'
+      });
+    }
+
+    await conn.beginTransaction();
+
+    const [localRows] = await conn.query(
+      `
+      SELECT ID, NOME
+      FROM SF_LOCAL_ALMOXARIFADO
+      WHERE ID = ?
+      LIMIT 1
+      `,
+      [idLocalAlmoxarifado]
+    );
+
+    const localSelecionado = localRows[0] || null;
+
+    if (!localSelecionado) {
+      throw new Error('Local de armazenagem não encontrado.');
+    }
+
+    const nomeLocal = textoLivre(localSelecionado.NOME).toUpperCase() || local || 'MANUAL';
+
+    const itensProcessados = [];
+
+    for (const item of itens) {
+      const idProduto = Number(item.idproduto || item.id_produto);
+      const codProdutoSistema = textoLivre(item.codprodutosistema || item.cod_produto_sistema).toUpperCase();
+      const descricaoProdutoSistema = textoLivre(
+        item.descricaoprodutosistema || item.descricao_produto_sistema
+      ).toUpperCase() || null;
+      const unidade = textoLivre(item.unidade).toUpperCase() || null;
+      const qtd = parseDecimalBr(item.quantidade);
+      const valorUnit = parseDecimalBr(item.valorUnitario || 0);
+      const valorTotalInformado = parseDecimalBr(item.valorTotal || 0);
+      const valorTotal = valorTotalInformado > 0 ? valorTotalInformado : (qtd * valorUnit);
+
+      if (!idProduto) {
+        throw new Error('Existe item sem produto do sistema vinculado.');
+      }
+
+      if (!codProdutoSistema) {
+        throw new Error(`O item ${idProduto} está sem código do produto do sistema.`);
+      }
+
+      if (!unidade) {
+        throw new Error(`O item ${codProdutoSistema} está sem unidade informada.`);
+      }
+
+      if (!qtd || qtd <= 0) {
+        throw new Error(`O item ${codProdutoSistema} está com quantidade inválida.`);
+      }
+
+      const [produtoRows] = await conn.query(
+        `
+        SELECT id, codigo, descricao, unidade, ativo
+        FROM SF_PRODUTOS
+        WHERE id = ?
+          AND ativo = 1
+        LIMIT 1
+        `,
+        [idProduto]
+      );
+
+      const produtoSistema = produtoRows[0] || null;
+
+      if (!produtoSistema) {
+        throw new Error(`Produto do sistema não encontrado para o item ${codProdutoSistema}.`);
+      }
+
+      const codigoProdutoFinal = textoLivre(produtoSistema.codigo).toUpperCase() || codProdutoSistema;
+      const descricaoProdutoFinal =
+        textoLivre(produtoSistema.descricao).toUpperCase() || descricaoProdutoSistema || null;
+      const unidadeFinal = unidade || textoLivre(produtoSistema.unidade).toUpperCase() || null;
+
+      const payloadEntradaLog = {
+        fornecedor_id: null,
+        nota: 'MANUAL',
+        serie: null,
+        cnpj_emitente: null,
+        cnpj_remetente: null,
+        data_emissao: null,
+        usuario_registro: usuarioRegistro || null,
+        qtd_nf: qtd,
+        valor_unitario_nf: valorUnit,
+        valor_total_nf: valorTotal,
+        cod_produto_nf: codigoProdutoFinal,
+        descricao_produto_nf: descricaoProdutoFinal,
+        unidade_nf: unidadeFinal,
+        cod_produto_sistema: codigoProdutoFinal,
+        descricao_produto_sistema: descricaoProdutoFinal,
+        produto_sistema_id: idProduto,
+        local: nomeLocal,
+        id_local_almoxarifado: idLocalAlmoxarifado,
+        origem: 'MANUAL'
+      };
+
+      const [rEntrada] = await conn.query(
+        `
+        INSERT INTO SF_PRODUTO_ENTRADA
+        (
+          fornecedor_id,
+          nota,
+          serie,
+          cnpj_emitente,
+          cnpj_remetente,
+          data_emissao,
+          data_registro,
+          usuario_registro,
+          qtd_nf,
+          valor_unitario_nf,
+          valor_total_nf,
+          cod_produto_nf,
+          descricao_produto_nf,
+          unidade_nf,
+          cod_produto_sistema,
+          produto_sistema_id,
+          LOCAL,
+          ID_LOCAL_ALMOXARIFADO,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        `,
+        [
+          null,
+          'MANUAL',
+          null,
+          null,
+          null,
+          null,
+          usuarioRegistro || null,
+          qtd,
+          valorUnit,
+          valorTotal,
+          codigoProdutoFinal,
+          descricaoProdutoFinal,
+          unidadeFinal,
+          codigoProdutoFinal,
+          idProduto,
+          nomeLocal,
+          idLocalAlmoxarifado
+        ]
+      );
+
+      await registrarLogProdutoEntrada(conn, {
+        idEntrada: rEntrada.insertId,
+        acao: 'INSERT',
+        usuario: usuarioRegistro || null,
+        antes: null,
+        depois: {
+          id: rEntrada.insertId,
+          ...payloadEntradaLog
+        },
+        observacao: 'Registro criado via lançamento manual'
+      });
+
+      itensProcessados.push({
+        idEntrada: rEntrada.insertId,
+        idproduto: idProduto,
+        codprodutosistema: codigoProdutoFinal,
+        descricaoprodutosistema: descricaoProdutoFinal,
+        unidade: unidadeFinal,
+        quantidade: qtd
+      });
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Lançamento manual realizado com sucesso.',
+      itensProcessados
+    });
+  } catch (err) {
+    try { await conn.rollback(); } catch {}
+    console.error('Erro /api/estoque/importacao-manual:', err);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao realizar lançamento manual.',
       error: err.message
     });
   } finally {
