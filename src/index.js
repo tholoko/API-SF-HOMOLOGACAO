@@ -3733,7 +3733,7 @@ app.post('/api/estoque/importacao-manual', async (req, res) => {
   try {
     const usuarioRegistro = textoLivre(req.body?.usuarioRegistro);
     const local = textoLivre(req.body?.local).toUpperCase() || null;
-    const idLocalAlmoxarifado = Number(req.body?.idLocalAlmoxarifado) || null;
+    const idLocalAlmoxarifado = 7 || null;
     const itens = Array.isArray(req.body?.itens) ? req.body.itens : [];
 
     if (!idLocalAlmoxarifado) {
