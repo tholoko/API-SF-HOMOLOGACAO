@@ -5504,7 +5504,7 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
       SELECT
         u.ID,
         u.nome,
-        u.LOCAL_TRABALHO
+        u.CENTRO_CUSTO
       FROM SF_USUARIO u
       WHERE UPPER(TRIM(u.nome)) = UPPER(TRIM(?))
       LIMIT 1
