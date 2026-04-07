@@ -3408,7 +3408,7 @@ app.put('/api/estoque/produtos-amarracao/:id', async (req, res) => {
 
 app.post('/api/estoque/importacao-pdf/confirmar', async (req, res) => {
   const conn = await pool.getConnection();
-
+  
   try {
     const emitente = textoLivre(req.body?.emitente).toUpperCase();
     const emitenteCnpj = normalizarDocumentoPDF(req.body?.emitenteCnpj);
