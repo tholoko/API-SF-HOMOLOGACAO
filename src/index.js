@@ -9686,7 +9686,7 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
         const cpf = somenteNumerosImportar(linha['CPF']);
         const dataNascimento = excelDateToISO(linha['DATA NASCIMENTO']);
         const dataAdmissao = excelDateToISO(linha['DATA ADMISSÃO'] || linha['DATA ADMISSAO']);
-        const funcao = texto(linha['FUNÇÃO'] || linha['FUNCAO']);
+        const funcao = titleCaseNome(linha['FUNÇÃO'] || linha['FUNCAO'] || '');
         const setor = titleCaseNome(linha['SETOR']);
         const perfil = texto(linha['PERFIL']);
         const status = texto(linha['STATUS']) || 'Ativo';
