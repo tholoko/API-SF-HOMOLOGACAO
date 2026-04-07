@@ -9548,7 +9548,7 @@ app.delete('/api/organograma/:id', async (req, res) => {
   }
 });
 
-// Importar Usuarios via Template
+// IMPORTAR USUÁRIOS VIA TEMPLATE
 
 function somenteNumerosImportar(v) {
   return String(v ?? '').replace(/\D/g, '');
@@ -9560,6 +9560,7 @@ function excelDateToISO(valor) {
   if (typeof valor === 'number') {
     const data = XLSX.SSF.parse_date_code(valor);
     if (!data) return null;
+
     const yyyy = String(data.y).padStart(4, '0');
     const mm = String(data.m).padStart(2, '0');
     const dd = String(data.d).padStart(2, '0');
@@ -9587,21 +9588,47 @@ async function obterOuCriarPorNome(conn, tabela, nome) {
     [valor]
   );
 
-  if (rows.length) return rows[0];
+  if (rows.length) {
+    console.log(`[IMPORTAÇÃO] Registro já existente em ${tabela}:`, rows[0]);
+    return rows[0];
+  }
 
   const result = await conn.query(
     `INSERT INTO ${tabela} (NOME) VALUES (?)`,
     [valor]
   );
 
-  return { ID: result.insertId, NOME: valor };
+  const novo = { ID: result.insertId, NOME: valor };
+  console.log(`[IMPORTAÇÃO] Registro criado em ${tabela}:`, novo);
+  return novo;
 }
 
 app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async (req, res) => {
   let conn;
 
   try {
+    console.log('\n========== [IMPORTAÇÃO USUÁRIOS] INÍCIO ==========');
+    console.log('[IMPORTAÇÃO] Data/Hora:', new Date().toISOString());
+    console.log('[IMPORTAÇÃO] Method:', req.method);
+    console.log('[IMPORTAÇÃO] URL:', req.originalUrl);
+    console.log('[IMPORTAÇÃO] Headers content-type:', req.headers['content-type']);
+    console.log('[IMPORTAÇÃO] Body recebido:', req.body);
+    console.log('[IMPORTAÇÃO] req.file existe?:', !!req.file);
+
+    if (req.file) {
+      console.log('[IMPORTAÇÃO] Arquivo recebido:', {
+        fieldname: req.file.fieldname,
+        originalname: req.file.originalname,
+        encoding: req.file.encoding,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        hasBuffer: !!req.file.buffer,
+        bufferLength: req.file.buffer?.length || 0
+      });
+    }
+
     if (!req.file?.buffer) {
+      console.log('[IMPORTAÇÃO] ERRO: req.file.buffer não recebido.');
       return res.status(400).json({
         success: false,
         message: 'Arquivo Excel é obrigatório.'
@@ -9609,10 +9636,27 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
     }
 
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    console.log('[IMPORTAÇÃO] Abas encontradas:', wb.SheetNames);
+
+    const primeiraAba = wb.SheetNames[0];
+    const ws = wb.Sheets[primeiraAba];
+
+    if (!ws) {
+      console.log('[IMPORTAÇÃO] ERRO: worksheet não encontrada.');
+      return res.status(400).json({
+        success: false,
+        message: 'A primeira aba da planilha não foi encontrada.'
+      });
+    }
+
     const linhas = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
+    console.log('[IMPORTAÇÃO] Nome da primeira aba:', primeiraAba);
+    console.log('[IMPORTAÇÃO] Total de linhas lidas:', linhas.length);
+    console.log('[IMPORTAÇÃO] Primeira linha lida:', linhas[0] || null);
+
     if (!linhas.length) {
+      console.log('[IMPORTAÇÃO] ERRO: a planilha está vazia.');
       return res.status(400).json({
         success: false,
         message: 'A planilha está vazia.'
@@ -9621,6 +9665,7 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
 
     conn = await pool.getConnection();
     await conn.beginTransaction();
+    console.log('[IMPORTAÇÃO] Conexão obtida e transação iniciada.');
 
     const sucessos = [];
     const ignoradosDetalhes = [];
@@ -9632,6 +9677,9 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
     for (let i = 0; i < linhas.length; i++) {
       const linha = linhas[i];
       const numeroLinha = i + 2;
+
+      console.log(`\n[IMPORTAÇÃO] ----- PROCESSANDO LINHA ${numeroLinha} -----`);
+      console.log('[IMPORTAÇÃO] Linha bruta:', linha);
 
       try {
         const nome = titleCaseNome(linha['NOME']);
@@ -9645,12 +9693,30 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
         const centroCusto = titleCaseNome(linha['CENTRO CUSTO']);
         const unidadeTrabalho = titleCaseNome(linha['UNIDADE TRABALHO']);
 
+        console.log('[IMPORTAÇÃO] Linha normalizada:', {
+          numeroLinha,
+          nome,
+          cpf,
+          dataNascimento,
+          dataAdmissao,
+          funcao,
+          setor,
+          perfil,
+          status,
+          centroCusto,
+          unidadeTrabalho
+        });
+
         if (!nome || !cpf || !dataNascimento || !setor || !perfil || !status) {
+          const erroMsg = 'Campos obrigatórios ausentes: NOME, CPF, DATA NASCIMENTO, SETOR, PERFIL e STATUS.';
+          console.log('[IMPORTAÇÃO] Linha inválida:', erroMsg);
+
           erros.push({
             linha: numeroLinha,
             nome: nome || '',
-            erro: 'Campos obrigatórios ausentes: NOME, CPF, DATA NASCIMENTO, SETOR, PERFIL e STATUS.'
+            erro: erroMsg
           });
+
           continue;
         }
 
@@ -9659,14 +9725,23 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
           [cpf]
         );
 
+        console.log('[IMPORTAÇÃO] Resultado consulta CPF:', cpfExistente);
+
         if (cpfExistente.length > 0) {
           ignorados++;
+          console.log('[IMPORTAÇÃO] Linha ignorada: CPF já cadastrado.', {
+            linha: numeroLinha,
+            nome,
+            cpf
+          });
+
           ignoradosDetalhes.push({
             linha: numeroLinha,
             nome,
             cpf,
             message: 'CPF já cadastrado. Registro ignorado.'
           });
+
           continue;
         }
 
@@ -9688,6 +9763,22 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
 
         const emailGerado = `${cpf}@temp.local`;
         const senhaHash = await bcrypt.hash('123456', 12);
+
+        console.log('[IMPORTAÇÃO] Dados do INSERT SF_USUARIO:', {
+          nome,
+          emailGerado,
+          telefone: null,
+          perfil,
+          setor,
+          funcao: funcao || null,
+          dataAdmissao,
+          centroCusto: centroCusto || null,
+          unidadeTrabalho: unidadeTrabalho || null,
+          status,
+          cpf,
+          dataNascimento,
+          mustChangePassword: 1
+        });
 
         const result = await conn.query(
           `INSERT INTO SF_USUARIO (
@@ -9724,6 +9815,13 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
         );
 
         inseridos++;
+        console.log('[IMPORTAÇÃO] Usuário inserido com sucesso:', {
+          linha: numeroLinha,
+          insertId: result.insertId,
+          nome,
+          cpf
+        });
+
         sucessos.push({
           linha: numeroLinha,
           id: result.insertId,
@@ -9732,6 +9830,13 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
           message: 'Usuário importado com sucesso.'
         });
       } catch (erroLinha) {
+        console.error('[IMPORTAÇÃO] ERRO AO PROCESSAR LINHA:', {
+          linha: numeroLinha,
+          nome: titleCaseNome(linha['NOME']) || '',
+          erro: erroLinha.message,
+          stack: erroLinha.stack
+        });
+
         erros.push({
           linha: numeroLinha,
           nome: titleCaseNome(linha['NOME']) || '',
@@ -9740,9 +9845,19 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
       }
     }
 
-    await conn.commit();
+    console.log('\n[IMPORTAÇÃO] Resumo antes do commit:', {
+      totalLinhas: linhas.length,
+      inseridos,
+      ignorados,
+      totalErros: erros.length,
+      totalSucessos: sucessos.length,
+      totalIgnoradosDetalhes: ignoradosDetalhes.length
+    });
 
-    return res.json({
+    await conn.commit();
+    console.log('[IMPORTAÇÃO] Commit realizado com sucesso.');
+
+    const retorno = {
       success: true,
       message: 'Importação concluída.',
       totalLinhas: linhas.length,
@@ -9752,12 +9867,24 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
       sucessos,
       ignoradosDetalhes,
       erros
-    });
+    };
+
+    console.log('[IMPORTAÇÃO] Retorno enviado ao front:', JSON.stringify(retorno, null, 2));
+    console.log('========== [IMPORTAÇÃO USUÁRIOS] FIM OK ==========\n');
+
+    return res.json(retorno);
   } catch (err) {
+    console.error('\n========== [IMPORTAÇÃO USUÁRIOS] ERRO GERAL ==========');
+    console.error('[IMPORTAÇÃO] Mensagem:', err.message);
+    console.error('[IMPORTAÇÃO] Stack:', err.stack);
+
     if (conn) {
       try {
         await conn.rollback();
-      } catch {}
+        console.error('[IMPORTAÇÃO] Rollback executado com sucesso.');
+      } catch (rollbackErr) {
+        console.error('[IMPORTAÇÃO] Erro ao executar rollback:', rollbackErr.message);
+      }
     }
 
     return res.status(500).json({
@@ -9766,10 +9893,12 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
       error: err.message
     });
   } finally {
-    if (conn) conn.release();
+    if (conn) {
+      conn.release();
+      console.log('[IMPORTAÇÃO] Conexão liberada.');
+    }
   }
 });
-
 
 
 // =====================
