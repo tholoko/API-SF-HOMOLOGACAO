@@ -10159,7 +10159,7 @@ app.get('/api/organograma-usuarios-vinculos', async (req, res) => {
         vus.CRIADO_EM AS CRIADO_EM,
         vus.ATUALIZADO_EM AS ATUALIZADO_EM
       FROM SF_ORGANOGRAMA_USUARIO_SETOR vus
-      INNER JOIN SFUSUARIO u ON u.ID = vus.ID_USUARIO
+      INNER JOIN SF_USUARIO u ON u.ID = vus.ID_USUARIO
       INNER JOIN SF_ORGANOGRAMA_SETOR s ON s.ID = vus.ID_SETOR_ORGANOGRAMA
       ${where}
       ORDER BY s.NOME ASC, u.NOME ASC
@@ -10192,7 +10192,7 @@ app.get('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
         vus.CRIADO_EM AS CRIADO_EM,
         vus.ATUALIZADO_EM AS ATUALIZADO_EM
       FROM SF_ORGANOGRAMA_USUARIO_SETOR vus
-      INNER JOIN SFUSUARIO u ON u.ID = vus.ID_USUARIO
+      INNER JOIN SF_USUARIO u ON u.ID = vus.ID_USUARIO
       INNER JOIN SF_ORGANOGRAMA_SETOR s ON s.ID = vus.ID_SETOR_ORGANOGRAMA
       WHERE vus.ID = ?
       LIMIT 1
@@ -10222,7 +10222,7 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
     }
 
     const usuario = await pool.query(
-      'SELECT ID FROM SFUSUARIO WHERE ID = ? LIMIT 1',
+      'SELECT ID FROM SF_USUARIO WHERE ID = ? LIMIT 1',
       [ID_USUARIO]
     );
     if (!usuario.length) {
@@ -10267,7 +10267,7 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
         vus.CRIADO_EM AS CRIADO_EM,
         vus.ATUALIZADO_EM AS ATUALIZADO_EM
       FROM SF_ORGANOGRAMA_USUARIO_SETOR vus
-      INNER JOIN SFUSUARIO u ON u.ID = vus.ID_USUARIO
+      INNER JOIN SF_USUARIO u ON u.ID = vus.ID_USUARIO
       INNER JOIN SF_ORGANOGRAMA_SETOR s ON s.ID = vus.ID_SETOR_ORGANOGRAMA
       WHERE vus.ID = ?
       LIMIT 1
@@ -10307,7 +10307,7 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
     }
 
     const usuario = await pool.query(
-      'SELECT ID FROM SFUSUARIO WHERE ID = ? LIMIT 1',
+      'SELECT ID FROM SF_USUARIO WHERE ID = ? LIMIT 1',
       [ID_USUARIO]
     );
     if (!usuario.length) {
@@ -10356,7 +10356,7 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
         vus.CRIADO_EM AS CRIADO_EM,
         vus.ATUALIZADO_EM AS ATUALIZADO_EM
       FROM SF_ORGANOGRAMA_USUARIO_SETOR vus
-      INNER JOIN SFUSUARIO u ON u.ID = vus.ID_USUARIO
+      INNER JOIN SF_USUARIO u ON u.ID = vus.ID_USUARIO
       INNER JOIN SF_ORGANOGRAMA_SETOR s ON s.ID = vus.ID_SETOR_ORGANOGRAMA
       WHERE vus.ID = ?
       LIMIT 1
