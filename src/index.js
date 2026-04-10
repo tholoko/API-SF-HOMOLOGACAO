@@ -10054,7 +10054,7 @@ app.post('/api/organograma-setores', async (req, res) => {
     if (err?.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({
         success: false,
-        message: 'Já existe um setor do organograma com esse nome.'
+        message: 'POST: /api/organograma-setores.'
       });
     }
 
