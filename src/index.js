@@ -9959,7 +9959,7 @@ app.get('/api/organograma-setores/:id', async (req, res) => {
       });
     }
 
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         NOME,
@@ -10238,7 +10238,7 @@ app.delete('/api/organograma-setores/:id', async (req, res) => {
 // Listar vínculos de usuários x setores do organograma
 app.get('/api/organograma-usuarios-vinculos', async (req, res) => {
   try {
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         vus.ID,
         vus.ID_USUARIO,
@@ -10282,7 +10282,7 @@ app.get('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
       });
     }
 
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         vus.ID,
         vus.ID_USUARIO,
