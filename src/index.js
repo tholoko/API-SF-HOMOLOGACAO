@@ -9423,7 +9423,7 @@ app.get('/api/local-trabalho', async (req, res) => {
   try {
     conn = await pool.getConnection();
 
-    const result = await conn.query(`
+    const [result] = await conn.query(`
       SELECT
         ID AS id,
         NOME AS nome,
@@ -9595,7 +9595,7 @@ app.post('/api/organograma', async (req, res) => {
       });
     }
 
-    const localExiste = await conn.query(
+    const [localExiste] = await conn.query(
       'SELECT ID FROM SF_LOCAL_TRABALHO WHERE ID = ? LIMIT 1',
       [id_local_trabalho]
     );
@@ -9607,7 +9607,7 @@ app.post('/api/organograma', async (req, res) => {
       });
     }
 
-    const setorPaiExiste = await conn.query(
+    const [setorPaiExiste] = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
       [id_setor_pai]
     );
@@ -9619,7 +9619,7 @@ app.post('/api/organograma', async (req, res) => {
       });
     }
 
-    const setorFilhoExiste = await conn.query(
+    const [setorFilhoExiste] = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
       [id_setor_filho]
     );
@@ -9631,7 +9631,7 @@ app.post('/api/organograma', async (req, res) => {
       });
     }
 
-    const duplicado = await conn.query(`
+    const [duplicado] = await conn.query(`
       SELECT ID
       FROM SF_ORGANOGRAMA
       WHERE id_local_trabalho = ?
@@ -9647,7 +9647,7 @@ app.post('/api/organograma', async (req, res) => {
       });
     }
 
-    const result = await conn.query(`
+    const [result] = await conn.query(`
       INSERT INTO SF_ORGANOGRAMA (
         id_local_trabalho,
         id_setor_pai,
@@ -9661,7 +9661,7 @@ app.post('/api/organograma', async (req, res) => {
       status
     ]);
 
-    const novoRegistro = await conn.query(`
+    const [novoRegistro] = await conn.query(`
       SELECT
         o.id,
         o.id_local_trabalho,
@@ -9740,7 +9740,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    const registroAtual = await conn.query(
+    const [registroAtual] = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA WHERE ID = ? LIMIT 1',
       [id]
     );
@@ -9752,7 +9752,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    const localExiste = await conn.query(
+    const [localExiste] = await conn.query(
       'SELECT ID FROM SF_LOCAL_TRABALHO WHERE ID = ? LIMIT 1',
       [id_local_trabalho]
     );
@@ -9764,7 +9764,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    const setorPaiExiste = await conn.query(
+    const [setorPaiExiste] = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
       [id_setor_pai]
     );
@@ -9776,7 +9776,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    const setorFilhoExiste = await conn.query(
+    const [setorFilhoExiste] = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
       [id_setor_filho]
     );
@@ -9788,7 +9788,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    const duplicado = await conn.query(`
+    const [duplicado] = await conn.query(`
       SELECT ID
       FROM SF_ORGANOGRAMA
       WHERE id_local_trabalho = ?
@@ -9821,7 +9821,7 @@ app.put('/api/organograma/:id', async (req, res) => {
       id
     ]);
 
-    const registroAtualizado = await conn.query(`
+    const [registroAtualizado] = await conn.query(`
       SELECT
         o.id,
         o.id_local_trabalho,
@@ -9882,7 +9882,7 @@ app.delete('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    const registro = await conn.query(
+    const [registro] = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA WHERE ID = ? LIMIT 1',
       [id]
     );
@@ -10176,7 +10176,7 @@ app.delete('/api/organograma-setores/:id', async (req, res) => {
       });
     }
 
-    const setor = await conn.query(
+    const [setor] = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
       [id]
     );
@@ -10188,7 +10188,7 @@ app.delete('/api/organograma-setores/:id', async (req, res) => {
       });
     }
 
-    const emUsoNoOrganograma = await conn.query(`
+    const [emUsoNoOrganograma] = await conn.query(`
       SELECT ID
       FROM SF_ORGANOGRAMA
       WHERE id_setor_pai = ? OR id_setor_filho = ?
@@ -10202,7 +10202,7 @@ app.delete('/api/organograma-setores/:id', async (req, res) => {
       });
     }
 
-    const emUsoPorUsuario = await conn.query(`
+    const [emUsoPorUsuario] = await conn.query(`
       SELECT ID
       FROM SF_ORGANOGRAMA_USUARIO_SETOR
       WHERE ID_SETOR_ORGANOGRAMA = ?
