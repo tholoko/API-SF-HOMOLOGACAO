@@ -9429,7 +9429,7 @@ app.get('/api/local-trabalho', async (req, res) => {
         NOME AS nome,
         ENDERECO AS endereco,
         TELEFONE AS telefone
-      FROM SFLOCALTRABALHO
+      FROM SF_LOCAL_TRABALHO
       ORDER BY NOME ASC
     `);
 
@@ -9485,7 +9485,7 @@ app.get('/api/organograma', async (req, res) => {
         o.criadoem,
         o.atualizadoem
       FROM SFORGANOGRAMA o
-      INNER JOIN SFLOCALTRABALHO lt ON lt.ID = o.idlocaltrabalho
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.idlocaltrabalho
       INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.idsetorpai
       INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.idsetorfilho
       ${where}
@@ -9536,7 +9536,7 @@ app.get('/api/organograma/:id', async (req, res) => {
         o.criadoem,
         o.atualizadoem
       FROM SFORGANOGRAMA o
-      INNER JOIN SFLOCALTRABALHO lt ON lt.ID = o.idlocaltrabalho
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.idlocaltrabalho
       INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.idsetorpai
       INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.idsetorfilho
       WHERE o.id = ?
@@ -9594,7 +9594,7 @@ app.post('/api/organograma', async (req, res) => {
     }
 
     const localExiste = await conn.query(
-      'SELECT ID FROM SFLOCALTRABALHO WHERE ID = ? LIMIT 1',
+      'SELECT ID FROM SF_LOCAL_TRABALHO WHERE ID = ? LIMIT 1',
       [idlocaltrabalho]
     );
 
@@ -9672,7 +9672,7 @@ app.post('/api/organograma', async (req, res) => {
         o.criadoem,
         o.atualizadoem
       FROM SFORGANOGRAMA o
-      INNER JOIN SFLOCALTRABALHO lt ON lt.ID = o.idlocaltrabalho
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.idlocaltrabalho
       INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.idsetorpai
       INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.idsetorfilho
       WHERE o.id = ?
@@ -9751,7 +9751,7 @@ app.put('/api/organograma/:id', async (req, res) => {
     }
 
     const localExiste = await conn.query(
-      'SELECT ID FROM SFLOCALTRABALHO WHERE ID = ? LIMIT 1',
+      'SELECT ID FROM SF_LOCAL_TRABALHO WHERE ID = ? LIMIT 1',
       [idlocaltrabalho]
     );
 
@@ -9832,7 +9832,7 @@ app.put('/api/organograma/:id', async (req, res) => {
         o.criadoem,
         o.atualizadoem
       FROM SFORGANOGRAMA o
-      INNER JOIN SFLOCALTRABALHO lt ON lt.ID = o.idlocaltrabalho
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.idlocaltrabalho
       INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.idsetorpai
       INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.idsetorfilho
       WHERE o.ID = ?
