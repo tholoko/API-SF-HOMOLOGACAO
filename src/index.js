@@ -10001,6 +10001,8 @@ app.post('/api/organograma-setores', async (req, res) => {
     const descricao = String(req.body?.descricao ?? '').trim() || null;
     const status = Number(req.body?.status ?? 1) ? 1 : 0;
 
+    console.log(nome);
+
     if (!nome) {
       return res.status(400).json({
         success: false,
