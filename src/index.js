@@ -9456,13 +9456,13 @@ app.get('/api/organograma', async (req, res) => {
   try {
     conn = await pool.getConnection();
 
-    const { idlocaltrabalho, status } = req.query;
+    const { id_local_trabalho, status } = req.query;
     const filtros = [];
     const params = [];
 
-    if (String(idlocaltrabalho ?? '').trim() !== '') {
-      filtros.push('o.idlocaltrabalho = ?');
-      params.push(Number(idlocaltrabalho));
+    if (String(id_local_trabalho ?? '').trim() !== '') {
+      filtros.push('o.id_local_trabalho = ?');
+      params.push(Number(id_local_trabalho));
     }
 
     if (String(status ?? '').trim() !== '') {
@@ -9475,19 +9475,19 @@ app.get('/api/organograma', async (req, res) => {
     const rows = await conn.query(`
       SELECT
         o.id,
-        o.idlocaltrabalho,
+        o.id_local_trabalho,
         lt.NOME AS nomelocaltrabalho,
-        o.idsetorpai,
+        o.id_setor_pai,
         sp.NOME AS nomesetorpai,
-        o.idsetorfilho,
+        o.id_setor_filho,
         sf.NOME AS nomesetorfilho,
         o.status,
-        o.criadoem,
-        o.atualizadoem
-      FROM SFORGANOGRAMA o
-      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.idlocaltrabalho
-      INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.idsetorpai
-      INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.idsetorfilho
+        o.criado_em,
+        o.atualizado_em
+      FROM SF_ORGANOGRAMA o
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.id_local_trabalho
+      INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.id_setor_pai
+      INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.id_setor_filho
       ${where}
       ORDER BY lt.NOME ASC, sp.NOME ASC, sf.NOME ASC
     `, params);
@@ -9526,19 +9526,19 @@ app.get('/api/organograma/:id', async (req, res) => {
     const rows = await conn.query(`
       SELECT
         o.id,
-        o.idlocaltrabalho,
+        o.id_local_trabalho,
         lt.NOME AS nomelocaltrabalho,
-        o.idsetorpai,
+        o.id_setor_pai,
         sp.NOME AS nomesetorpai,
-        o.idsetorfilho,
+        o.id_setor_filho,
         sf.NOME AS nomesetorfilho,
         o.status,
-        o.criadoem,
-        o.atualizadoem
-      FROM SFORGANOGRAMA o
-      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.idlocaltrabalho
-      INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.idsetorpai
-      INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.idsetorfilho
+        o.criado_em,
+        o.atualizado_em
+      FROM SF_ORGANOGRAMA o
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.id_local_trabalho
+      INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.id_setor_pai
+      INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.id_setor_filho
       WHERE o.id = ?
       LIMIT 1
     `, [id]);
@@ -9574,19 +9574,19 @@ app.post('/api/organograma', async (req, res) => {
   try {
     conn = await pool.getConnection();
 
-    const idlocaltrabalho = Number(req.body?.idlocaltrabalho ?? req.body?.id_local_trabalho);
-    const idsetorpai = Number(req.body?.idsetorpai ?? req.body?.id_setor_pai);
-    const idsetorfilho = Number(req.body?.idsetorfilho ?? req.body?.id_setor_filho);
+    const id_local_trabalho = Number(req.body?.id_local_trabalho ?? req.body?.id_local_trabalho);
+    const id_setor_pai = Number(req.body?.id_setor_pai ?? req.body?.id_setor_pai);
+    const id_setor_filho = Number(req.body?.id_setor_filho ?? req.body?.id_setor_filho);
     const status = Number(req.body?.status ?? 1) ? 1 : 0;
 
-    if (!idlocaltrabalho || !idsetorpai || !idsetorfilho) {
+    if (!id_local_trabalho || !id_setor_pai || !id_setor_filho) {
       return res.status(400).json({
         success: false,
-        message: 'idlocaltrabalho, idsetorpai e idsetorfilho são obrigatórios.'
+        message: 'id_local_trabalho, id_setor_pai e id_setor_filho são obrigatórios.'
       });
     }
 
-    if (idsetorpai === idsetorfilho) {
+    if (id_setor_pai === id_setor_filho) {
       return res.status(400).json({
         success: false,
         message: 'O setor pai não pode ser igual ao setor filho.'
@@ -9595,7 +9595,7 @@ app.post('/api/organograma', async (req, res) => {
 
     const localExiste = await conn.query(
       'SELECT ID FROM SF_LOCAL_TRABALHO WHERE ID = ? LIMIT 1',
-      [idlocaltrabalho]
+      [id_local_trabalho]
     );
 
     if (!localExiste.length) {
@@ -9607,7 +9607,7 @@ app.post('/api/organograma', async (req, res) => {
 
     const setorPaiExiste = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
-      [idsetorpai]
+      [id_setor_pai]
     );
 
     if (!setorPaiExiste.length) {
@@ -9619,7 +9619,7 @@ app.post('/api/organograma', async (req, res) => {
 
     const setorFilhoExiste = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
-      [idsetorfilho]
+      [id_setor_filho]
     );
 
     if (!setorFilhoExiste.length) {
@@ -9631,12 +9631,12 @@ app.post('/api/organograma', async (req, res) => {
 
     const duplicado = await conn.query(`
       SELECT ID
-      FROM SFORGANOGRAMA
-      WHERE idlocaltrabalho = ?
-        AND idsetorpai = ?
-        AND idsetorfilho = ?
+      FROM SF_ORGANOGRAMA
+      WHERE id_local_trabalho = ?
+        AND id_setor_pai = ?
+        AND id_setor_filho = ?
       LIMIT 1
-    `, [idlocaltrabalho, idsetorpai, idsetorfilho]);
+    `, [id_local_trabalho, id_setor_pai, id_setor_filho]);
 
     if (duplicado.length) {
       return res.status(409).json({
@@ -9646,35 +9646,35 @@ app.post('/api/organograma', async (req, res) => {
     }
 
     const result = await conn.query(`
-      INSERT INTO SFORGANOGRAMA (
-        idlocaltrabalho,
-        idsetorpai,
-        idsetorfilho,
+      INSERT INTO SF_ORGANOGRAMA (
+        id_local_trabalho,
+        id_setor_pai,
+        id_setor_filho,
         status
       ) VALUES (?, ?, ?, ?)
     `, [
-      idlocaltrabalho,
-      idsetorpai,
-      idsetorfilho,
+      id_local_trabalho,
+      id_setor_pai,
+      id_setor_filho,
       status
     ]);
 
     const novoRegistro = await conn.query(`
       SELECT
         o.id,
-        o.idlocaltrabalho,
+        o.id_local_trabalho,
         lt.NOME AS nomelocaltrabalho,
-        o.idsetorpai,
+        o.id_setor_pai,
         sp.NOME AS nomesetorpai,
-        o.idsetorfilho,
+        o.id_setor_filho,
         sf.NOME AS nomesetorfilho,
         o.status,
-        o.criadoem,
-        o.atualizadoem
-      FROM SFORGANOGRAMA o
-      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.idlocaltrabalho
-      INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.idsetorpai
-      INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.idsetorfilho
+        o.criado_em,
+        o.atualizado_em
+      FROM SF_ORGANOGRAMA o
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.id_local_trabalho
+      INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.id_setor_pai
+      INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.id_setor_filho
       WHERE o.id = ?
       LIMIT 1
     `, [result.insertId]);
@@ -9712,9 +9712,9 @@ app.put('/api/organograma/:id', async (req, res) => {
     conn = await pool.getConnection();
 
     const id = Number(req.params.id);
-    const idlocaltrabalho = Number(req.body?.idlocaltrabalho ?? req.body?.id_local_trabalho);
-    const idsetorpai = Number(req.body?.idsetorpai ?? req.body?.id_setor_pai);
-    const idsetorfilho = Number(req.body?.idsetorfilho ?? req.body?.id_setor_filho);
+    const id_local_trabalho = Number(req.body?.id_local_trabalho ?? req.body?.id_local_trabalho);
+    const id_setor_pai = Number(req.body?.id_setor_pai ?? req.body?.id_setor_pai);
+    const id_setor_filho = Number(req.body?.id_setor_filho ?? req.body?.id_setor_filho);
     const status = Number(req.body?.status ?? 1) ? 1 : 0;
 
     if (!id) {
@@ -9724,14 +9724,14 @@ app.put('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    if (!idlocaltrabalho || !idsetorpai || !idsetorfilho) {
+    if (!id_local_trabalho || !id_setor_pai || !id_setor_filho) {
       return res.status(400).json({
         success: false,
-        message: 'idlocaltrabalho, idsetorpai e idsetorfilho são obrigatórios.'
+        message: 'id_local_trabalho, id_setor_pai e id_setor_filho são obrigatórios.'
       });
     }
 
-    if (idsetorpai === idsetorfilho) {
+    if (id_setor_pai === id_setor_filho) {
       return res.status(400).json({
         success: false,
         message: 'O setor pai não pode ser igual ao setor filho.'
@@ -9739,7 +9739,7 @@ app.put('/api/organograma/:id', async (req, res) => {
     }
 
     const registroAtual = await conn.query(
-      'SELECT ID FROM SFORGANOGRAMA WHERE ID = ? LIMIT 1',
+      'SELECT ID FROM SF_ORGANOGRAMA WHERE ID = ? LIMIT 1',
       [id]
     );
 
@@ -9752,7 +9752,7 @@ app.put('/api/organograma/:id', async (req, res) => {
 
     const localExiste = await conn.query(
       'SELECT ID FROM SF_LOCAL_TRABALHO WHERE ID = ? LIMIT 1',
-      [idlocaltrabalho]
+      [id_local_trabalho]
     );
 
     if (!localExiste.length) {
@@ -9764,7 +9764,7 @@ app.put('/api/organograma/:id', async (req, res) => {
 
     const setorPaiExiste = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
-      [idsetorpai]
+      [id_setor_pai]
     );
 
     if (!setorPaiExiste.length) {
@@ -9776,7 +9776,7 @@ app.put('/api/organograma/:id', async (req, res) => {
 
     const setorFilhoExiste = await conn.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
-      [idsetorfilho]
+      [id_setor_filho]
     );
 
     if (!setorFilhoExiste.length) {
@@ -9788,13 +9788,13 @@ app.put('/api/organograma/:id', async (req, res) => {
 
     const duplicado = await conn.query(`
       SELECT ID
-      FROM SFORGANOGRAMA
-      WHERE idlocaltrabalho = ?
-        AND idsetorpai = ?
-        AND idsetorfilho = ?
+      FROM SF_ORGANOGRAMA
+      WHERE id_local_trabalho = ?
+        AND id_setor_pai = ?
+        AND id_setor_filho = ?
         AND ID <> ?
       LIMIT 1
-    `, [idlocaltrabalho, idsetorpai, idsetorfilho, id]);
+    `, [id_local_trabalho, id_setor_pai, id_setor_filho, id]);
 
     if (duplicado.length) {
       return res.status(409).json({
@@ -9804,17 +9804,17 @@ app.put('/api/organograma/:id', async (req, res) => {
     }
 
     await conn.query(`
-      UPDATE SFORGANOGRAMA
+      UPDATE SF_ORGANOGRAMA
       SET
-        idlocaltrabalho = ?,
-        idsetorpai = ?,
-        idsetorfilho = ?,
+        id_local_trabalho = ?,
+        id_setor_pai = ?,
+        id_setor_filho = ?,
         status = ?
       WHERE ID = ?
     `, [
-      idlocaltrabalho,
-      idsetorpai,
-      idsetorfilho,
+      id_local_trabalho,
+      id_setor_pai,
+      id_setor_filho,
       status,
       id
     ]);
@@ -9822,19 +9822,19 @@ app.put('/api/organograma/:id', async (req, res) => {
     const registroAtualizado = await conn.query(`
       SELECT
         o.id,
-        o.idlocaltrabalho,
+        o.id_local_trabalho,
         lt.NOME AS nomelocaltrabalho,
-        o.idsetorpai,
+        o.id_setor_pai,
         sp.NOME AS nomesetorpai,
-        o.idsetorfilho,
+        o.id_setor_filho,
         sf.NOME AS nomesetorfilho,
         o.status,
-        o.criadoem,
-        o.atualizadoem
-      FROM SFORGANOGRAMA o
-      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.idlocaltrabalho
-      INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.idsetorpai
-      INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.idsetorfilho
+        o.criado_em,
+        o.atualizado_em
+      FROM SF_ORGANOGRAMA o
+      INNER JOIN SF_LOCAL_TRABALHO lt ON lt.ID = o.id_local_trabalho
+      INNER JOIN SF_ORGANOGRAMA_SETOR sp ON sp.ID = o.id_setor_pai
+      INNER JOIN SF_ORGANOGRAMA_SETOR sf ON sf.ID = o.id_setor_filho
       WHERE o.ID = ?
       LIMIT 1
     `, [id]);
@@ -9881,7 +9881,7 @@ app.delete('/api/organograma/:id', async (req, res) => {
     }
 
     const registro = await conn.query(
-      'SELECT ID FROM SFORGANOGRAMA WHERE ID = ? LIMIT 1',
+      'SELECT ID FROM SF_ORGANOGRAMA WHERE ID = ? LIMIT 1',
       [id]
     );
 
@@ -9892,7 +9892,7 @@ app.delete('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    await conn.query('DELETE FROM SFORGANOGRAMA WHERE ID = ?', [id]);
+    await conn.query('DELETE FROM SF_ORGANOGRAMA WHERE ID = ?', [id]);
 
     return res.json({
       success: true,
@@ -10184,8 +10184,8 @@ app.delete('/api/organograma-setores/:id', async (req, res) => {
 
     const emUsoNoOrganograma = await conn.query(`
       SELECT ID
-      FROM SFORGANOGRAMA
-      WHERE idsetorpai = ? OR idsetorfilho = ?
+      FROM SF_ORGANOGRAMA
+      WHERE id_setor_pai = ? OR id_setor_filho = ?
       LIMIT 1
     `, [id, id]);
 
