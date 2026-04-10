@@ -9469,7 +9469,7 @@ app.get('/api/organograma', async (req, res) => {
 
     if (String(status ?? '').trim() !== '') {
       filtros.push('o.status = ?');
-      params.push(Number(status) ? 1 : 0);
+      params.push(Number(status) === 1 ? 1 : 0);
     }
 
     const where = filtros.length ? `WHERE ${filtros.join(' AND ')}` : '';
