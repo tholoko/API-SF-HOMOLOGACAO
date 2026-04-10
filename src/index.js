@@ -9753,6 +9753,164 @@ app.delete('/api/organograma/:id', async (req, res) => {
   }
 });
 
+app.get('/api/organograma-setores', async (req, res) => {
+  try {
+    const rows = await pool.query(`
+      SELECT ID, NOME, DESCRICAO, STATUS, CRIADO_EM, ATUALIZADO_EM
+      FROM SF_ORGANOGRAMA_SETOR
+      ORDER BY NOME ASC
+    `);
+
+    res.json({ success: true, items: rows });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar setores do organograma.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/organograma-setores', async (req, res) => {
+  try {
+    const nome = String(req.body?.nome ?? '').trim();
+    const descricao = String(req.body?.descricao ?? '').trim() || null;
+
+    if (!nome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome do setor é obrigatório.'
+      });
+    }
+
+    const result = await pool.query(`
+      INSERT INTO SF_ORGANOGRAMA_SETOR (NOME, DESCRICAO, STATUS)
+      VALUES (?, ?, 1)
+    `, [nome, descricao]);
+
+    res.status(201).json({
+      success: true,
+      item: {
+        ID: result.insertId,
+        NOME: nome,
+        DESCRICAO: descricao,
+        STATUS: 1
+      }
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao cadastrar setor do organograma.',
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/organograma-usuarios-vinculos', async (req, res) => {
+  try {
+    const rows = await pool.query(`
+      SELECT vus.ID,
+             vus.ID_USUARIO,
+             u.NOME AS NOME_USUARIO,
+             u.EMAIL AS EMAIL_USUARIO,
+             vus.ID_SETOR_ORGANOGRAMA,
+             s.NOME AS NOME_SETOR,
+             vus.STATUS,
+             vus.CRIADO_EM,
+             vus.ATUALIZADO_EM
+      FROM SF_ORGANOGRAMA_USUARIO_SETOR vus
+      INNER JOIN SFUSUARIO u ON u.ID = vus.ID_USUARIO
+      INNER JOIN SF_ORGANOGRAMA_SETOR s ON s.ID = vus.ID_SETOR_ORGANOGRAMA
+      ORDER BY s.NOME ASC, u.NOME ASC
+    `);
+
+    res.json({ success: true, items: rows });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar vínculos de usuários do organograma.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
+  try {
+    const idUsuario = Number(req.body?.id_usuario);
+    const idSetorOrganograma = Number(req.body?.id_setor_organograma);
+
+    if (!idUsuario || !idSetorOrganograma) {
+      return res.status(400).json({
+        success: false,
+        message: 'id_usuario e id_setor_organograma são obrigatórios.'
+      });
+    }
+
+    const usuario = await pool.query(
+      'SELECT ID FROM SFUSUARIO WHERE ID = ? LIMIT 1',
+      [idUsuario]
+    );
+
+    if (!usuario.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuário não encontrado.'
+      });
+    }
+
+    const setor = await pool.query(
+      'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
+      [idSetorOrganograma]
+    );
+
+    if (!setor.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Setor do organograma não encontrado.'
+      });
+    }
+
+    const duplicado = await pool.query(
+      `SELECT ID
+         FROM SF_ORGANOGRAMA_USUARIO_SETOR
+        WHERE ID_USUARIO = ?
+          AND ID_SETOR_ORGANOGRAMA = ?
+        LIMIT 1`,
+      [idUsuario, idSetorOrganograma]
+    );
+
+    if (duplicado.length) {
+      return res.status(409).json({
+        success: false,
+        message: 'Usuário já vinculado a este setor.'
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO SF_ORGANOGRAMA_USUARIO_SETOR
+       (ID_USUARIO, ID_SETOR_ORGANOGRAMA, STATUS)
+       VALUES (?, ?, 1)`,
+      [idUsuario, idSetorOrganograma]
+    );
+
+    res.status(201).json({
+      success: true,
+      item: {
+        ID: result.insertId,
+        ID_USUARIO: idUsuario,
+        ID_SETOR_ORGANOGRAMA: idSetorOrganograma,
+        STATUS: 1
+      }
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao vincular usuário ao setor do organograma.',
+      error: err.message
+    });
+  }
+});
+
 // IMPORTAR USUÁRIOS VIA TEMPLATE
 
 function somenteNumerosImportar(v) {
