@@ -10010,7 +10010,7 @@ app.post('/api/organograma-setores', async (req, res) => {
       });
     }
 
-    const duplicado = await pool.query(`
+    const [duplicado] = await pool.query(`
       SELECT ID
       FROM SF_ORGANOGRAMA_SETOR
       WHERE UPPER(TRIM(NOME)) = UPPER(TRIM(?))
