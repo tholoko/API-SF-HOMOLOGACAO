@@ -9474,7 +9474,7 @@ app.get('/api/organograma', async (req, res) => {
 
     const where = filtros.length ? `WHERE ${filtros.join(' AND ')}` : '';
 
-    const rows = await conn.query(`
+    const [rows] = await pool.query(`
       SELECT
         o.id,
         o.id_local_trabalho,
@@ -9525,7 +9525,7 @@ app.get('/api/organograma/:id', async (req, res) => {
       });
     }
 
-    const rows = await conn.query(`
+    const [rows] = await pool.query(`
       SELECT
         o.id,
         o.id_local_trabalho,
@@ -9920,7 +9920,7 @@ app.delete('/api/organograma/:id', async (req, res) => {
 // Listar setores do organograma
 app.get('/api/organograma-setores', async (req, res) => {
   try {
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         NOME,
