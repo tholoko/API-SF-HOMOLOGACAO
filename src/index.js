@@ -9423,7 +9423,7 @@ app.get('/api/local-trabalho', async (req, res) => {
   try {
     conn = await pool.getConnection();
 
-    const rows = await conn.query(`
+    const result = await conn.query(`
       SELECT
         ID AS id,
         NOME AS nome,
@@ -9432,6 +9432,8 @@ app.get('/api/local-trabalho', async (req, res) => {
       FROM SF_LOCAL_TRABALHO
       ORDER BY NOME ASC
     `);
+
+    const rows = Array.isArray(result?.[0]) ? result[0] : result;
 
     return res.json({
       success: true,
