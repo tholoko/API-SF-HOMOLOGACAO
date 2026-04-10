@@ -10017,6 +10017,8 @@ app.post('/api/organograma-setores', async (req, res) => {
       LIMIT 1
     `, [nome]);
 
+    console.log(duplicado.length);
+
     if (duplicado.length) {
       return res.status(409).json({
         success: false,
