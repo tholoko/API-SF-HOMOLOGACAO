@@ -10026,12 +10026,12 @@ app.post('/api/organograma-setores', async (req, res) => {
       });
     }
 
-    const result = await pool.query(`
+    const [result] = await pool.query(`
       INSERT INTO SF_ORGANOGRAMA_SETOR (NOME, DESCRICAO, STATUS)
       VALUES (?, ?, ?)
     `, [nome, descricao, status]);
 
-    const itemRows = await pool.query(`
+    const [itemRows] = await pool.query(`
       SELECT
         ID,
         NOME,
@@ -10089,7 +10089,7 @@ app.put('/api/organograma-setores/:id', async (req, res) => {
       });
     }
 
-    const atual = await pool.query(
+    const [atual] = await pool.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
       [id]
     );
@@ -10101,7 +10101,7 @@ app.put('/api/organograma-setores/:id', async (req, res) => {
       });
     }
 
-    const duplicado = await pool.query(`
+    const [duplicado] = await pool.query(`
       SELECT ID
       FROM SF_ORGANOGRAMA_SETOR
       WHERE UPPER(TRIM(NOME)) = UPPER(TRIM(?))
@@ -10125,7 +10125,7 @@ app.put('/api/organograma-setores/:id', async (req, res) => {
       WHERE ID = ?
     `, [nome, descricao, status, id]);
 
-    const itemRows = await pool.query(`
+    const [itemRows] = await pool.query(`
       SELECT
         ID,
         NOME,
@@ -10340,7 +10340,7 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
       });
     }
 
-    const usuario = await pool.query(
+    const [usuario] = await pool.query(
       'SELECT ID FROM SF_USUARIO WHERE ID = ? LIMIT 1',
       [idUsuario]
     );
@@ -10352,7 +10352,7 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
       });
     }
 
-    const setor = await pool.query(
+    const [setor] = await pool.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
       [idSetorOrganograma]
     );
@@ -10364,7 +10364,7 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
       });
     }
 
-    const duplicado = await pool.query(`
+    const [duplicado] = await pool.query(`
       SELECT ID
       FROM SF_ORGANOGRAMA_USUARIO_SETOR
       WHERE ID_USUARIO = ?
@@ -10379,13 +10379,13 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
       });
     }
 
-    const result = await pool.query(`
+    const [result] = await pool.query(`
       INSERT INTO SF_ORGANOGRAMA_USUARIO_SETOR
       (ID_USUARIO, ID_SETOR_ORGANOGRAMA, STATUS)
       VALUES (?, ?, ?)
     `, [idUsuario, idSetorOrganograma, status]);
 
-    const itemRows = await pool.query(`
+    const [itemRows] = await pool.query(`
       SELECT
         vus.ID,
         vus.ID_USUARIO,
@@ -10448,7 +10448,7 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
       });
     }
 
-    const atual = await pool.query(
+    const [atual] = await pool.query(
       'SELECT ID FROM SF_ORGANOGRAMA_USUARIO_SETOR WHERE ID = ? LIMIT 1',
       [id]
     );
@@ -10460,7 +10460,7 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
       });
     }
 
-    const usuario = await pool.query(
+    const [usuario] = await pool.query(
       'SELECT ID FROM SF_USUARIO WHERE ID = ? LIMIT 1',
       [idUsuario]
     );
@@ -10472,7 +10472,7 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
       });
     }
 
-    const setor = await pool.query(
+    const [setor] = await pool.query(
       'SELECT ID FROM SF_ORGANOGRAMA_SETOR WHERE ID = ? LIMIT 1',
       [idSetorOrganograma]
     );
@@ -10484,7 +10484,7 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
       });
     }
 
-    const duplicado = await pool.query(`
+    const [duplicado] = await pool.query(`
       SELECT ID
       FROM SF_ORGANOGRAMA_USUARIO_SETOR
       WHERE ID_USUARIO = ?
@@ -10509,7 +10509,7 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
       WHERE ID = ?
     `, [idUsuario, idSetorOrganograma, status, id]);
 
-    const itemRows = await pool.query(`
+    const [itemRows] = await pool.query(`
       SELECT
         vus.ID,
         vus.ID_USUARIO,
@@ -10562,7 +10562,7 @@ app.delete('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
       });
     }
 
-    const atual = await pool.query(
+    const [atual] = await pool.query(
       'SELECT ID FROM SF_ORGANOGRAMA_USUARIO_SETOR WHERE ID = ? LIMIT 1',
       [id]
     );
