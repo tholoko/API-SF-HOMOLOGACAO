@@ -10328,9 +10328,11 @@ app.get('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
 
 // Criar vínculo usuário x setor do organograma
 app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
+  
+  console.log(req.body);
   try {
-    const idUsuario = Number(req.body?.id_usuario ?? req.body?.idUsuario);
-    const idSetorOrganograma = Number(req.body?.id_setor_organograma ?? req.body?.idSetorOrganograma);
+    const idUsuario = Number(req.body?.id_usuario ?? req.body?.idUsuario ?? req.body?.idusuario);
+    const idSetorOrganograma = Number(req.body?.id_setor_organograma ?? req.body?.idSetorOrganograma ?? req.body?.idsetororganograma);
     const status = Number(req.body?.status ?? 1) ? 1 : 0;
 
     if (!idUsuario || !idSetorOrganograma) {
