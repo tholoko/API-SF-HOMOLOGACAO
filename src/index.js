@@ -8905,26 +8905,33 @@ async function validar_conflito_reserva_carro(
 
 async function buscar_dados_condutor_por_usuario(conn, usuario_solicitante) {
   const usuario_normalizado = normalizar_texto(usuario_solicitante);
+
   if (!usuario_normalizado) return null;
 
   const [rows] = await conn.query(
     `
       SELECT
         u.ID AS usuario_id,
-        u.NOME AS nome,
-        COALESCE(u.MATRICULA, '') AS matricula,
-        COALESCE(u.CPF, '') AS cpf,
-        COALESCE(u.CNH, '') AS cnh,
-        COALESCE(u.CATEGORIA_CNH, '') AS categoria_cnh,
-        u.VALIDADE_CNH AS validade_cnh
-      FROM SF_USUARIO u
+        u.NOME AS nome
+      FROM SFUSUARIO u
       WHERE UPPER(TRIM(u.NOME)) = UPPER(TRIM(?))
       LIMIT 1
     `,
     [usuario_normalizado]
   );
 
-  return rows?.[0] || null;
+  const item = rows?.[0] || null;
+  if (!item) return null;
+
+  return {
+    usuario_id: item.usuario_id,
+    nome: item.nome || '',
+    matricula: '',
+    cpf: '',
+    cnh: '',
+    categoria_cnh: '',
+    validade_cnh: null
+  };
 }
 
 async function contar_veiculos_disponiveis_no_periodo(conn, {
