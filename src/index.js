@@ -8913,7 +8913,7 @@ async function buscar_dados_condutor_por_usuario(conn, usuario_solicitante) {
       SELECT
         u.ID AS usuario_id,
         u.NOME AS nome
-      FROM SFUSUARIO u
+      FROM SF_USUARIO u
       WHERE UPPER(TRIM(u.NOME)) = UPPER(TRIM(?))
       LIMIT 1
     `,
