@@ -8907,7 +8907,7 @@ async function buscar_dados_condutor_por_usuario(conn, usuario_solicitante) {
   const usuario_normalizado = normalizar_texto(usuario_solicitante);
   if (!usuario_normalizado) return null;
 
-  const rows = await conn.query(
+  const [rows] = await conn.query(
     `
       SELECT
         u.ID AS usuario_id,
