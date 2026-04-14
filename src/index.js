@@ -7358,6 +7358,8 @@ function datetimeLocalToMysql(v) {
 app.post('/api/reservas-carro', async (req, res) => {
   let conn;
 
+  
+
   try {
     const {
       tipoVeiculo,
@@ -7368,6 +7370,8 @@ app.post('/api/reservas-carro', async (req, res) => {
       urgencia,
       usuarioSolicitante
     } = req.body || {};
+
+    console.log(req.body);
 
     if (!tipoVeiculo || !dataNecessaria || !previsaoDevolucao || !urgencia || !usuarioSolicitante) {
       return res.status(400).json({
@@ -7853,6 +7857,8 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       urgencia,
       usuarioSolicitante
     } = req.body || {};
+
+    console.log(req.body)
 
     if (!idReserva) {
       return res.status(400).json({
