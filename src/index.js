@@ -8467,7 +8467,7 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
       });
     }
 
-    if (normalizarStatusReserva(reserva.status_solicitacao) !== 'PENDENTE') {
+    if (normalizarStatusReserva(reserva.status_solicitacao) !== 'PENDENTE FROTA') {
       await conn.rollback();
       return res.status(400).json({
         success: false,
