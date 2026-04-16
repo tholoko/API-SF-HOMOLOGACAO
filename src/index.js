@@ -7823,10 +7823,15 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
     await conn.beginTransaction();
 
     const rows = await conn.query(
-      `SELECT id, statussolicitacao, termoaceito
-       FROM SFRESERVACARRO
-       WHERE id = ?
-       LIMIT 1`,
+      `
+        SELECT
+          rc.id,
+          rc.status_solicitacao,
+          rc.termoaceito
+        FROM SF_RESERVA_CARRO rc
+        WHERE rc.id = ?
+        LIMIT 1
+      `,
       [idReserva]
     );
 
@@ -7840,7 +7845,7 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
       });
     }
 
-    if (String(reserva.statussolicitacao || '').trim().toUpperCase() !== 'PENDENTE GESTOR') {
+    if (String(reserva.status_solicitacao || '').trim().toUpperCase() !== 'PENDENTE GESTOR') {
       await conn.rollback();
       return res.status(400).json({
         success: false,
@@ -7858,11 +7863,11 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
 
     await conn.query(
       `
-        UPDATE SFRESERVACARRO
+        UPDATE SF_RESERVA_CARRO
         SET
-          statussolicitacao = 'PENDENTE',
-          usuariogestoraprovacao = ?,
-          datagestoraprovacao = NOW()
+          status_solicitacao = 'PENDENTE FROTA',
+          usuario_gestor_aprovacao = ?,
+          data_gestor_aprovacao = NOW()
         WHERE id = ?
       `,
       [usuarioAprovacaoGestor, idReserva]
@@ -7872,7 +7877,7 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'Reserva aprovada pelo gestor e enviada para a etapa da logística.'
+      message: 'Reserva aprovada pelo gestor e enviada para a etapa da frota.'
     });
   } catch (err) {
     if (conn) {
