@@ -7633,13 +7633,49 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
         rc.observacoes,
         rc.usuario_solicitante,
         rc.data_solicitacao,
-        rc.status_solicitacao,
+
+        CASE
+          WHEN UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) NOT IN ('PENDENTE', 'PENDENTE GESTOR', 'PENDENTE FROTA')
+            THEN rc.status_solicitacao
+          WHEN UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) = 'PENDENTE GESTOR'
+            THEN 'PENDENTE GESTOR'
+          WHEN UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) = 'PENDENTE FROTA'
+            THEN 'PENDENTE FROTA'
+          WHEN EXISTS (
+            SELECT 1
+            FROM SF_ORGANOGRAMA_USUARIO_SETOR ous
+            INNER JOIN SF_ORGANOGRAMA_SETOR os
+              ON os.ID = ous.ID_SETOR_ORGANOGRAMA
+             AND os.STATUS = 1
+            INNER JOIN SF_ORGANOGRAMA o
+              ON o.id_setor_filho = ous.ID_SETOR_ORGANOGRAMA
+             AND o.status = 1
+            WHERE ous.ID_USUARIO = u.ID
+              AND LOWER(TRIM(COALESCE(ous.PRECISA_APROCAVAO, ''))) = 'sim'
+            LIMIT 1
+          ) THEN 'PENDENTE GESTOR'
+          ELSE 'PENDENTE FROTA'
+        END AS status_solicitacao,
+
         rc.motivo_recusa,
         rc.usuario_recusa,
         rc.data_recusa,
         rc.usuario_aprovacao,
         rc.data_aprovacao,
+        rc.usuario_gestor_aprovacao,
+        rc.data_gestor_aprovacao,
         rc.veiculo_id,
+
+        rc.termoaceito,
+        rc.dataaceitetermo,
+        rc.fotoaceitetermo,
+        rc.termoversao,
+        rc.nomecolaborador,
+        rc.matriculacolaborador,
+        rc.cpfcolaborador,
+        rc.cnhcolaborador,
+        rc.categoriacnh,
+        rc.validadecnh,
 
         rc.checklist_saida,
         rc.km_saida,
@@ -7670,9 +7706,15 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
         v.cor AS veiculo_cor,
         v.km_atual AS veiculo_km_atual,
         v.status_veiculo AS veiculo_status
+
       FROM SF_RESERVA_CARRO rc
+
       LEFT JOIN SF_VEICULOS v
         ON v.id = rc.veiculo_id
+
+      LEFT JOIN SF_USUARIO u
+        ON UPPER(TRIM(u.NOME)) = UPPER(TRIM(rc.usuario_solicitante))
+
       WHERE rc.id = ?
       LIMIT 1
     `, [idReserva]);
