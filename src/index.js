@@ -7861,7 +7861,7 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
     conn = await pool.getConnection();
     await conn.beginTransaction();
 
-    const rows = await conn.query(
+    const [rows] = await conn.query(
       `
         SELECT
           rc.id,
