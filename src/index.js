@@ -7846,6 +7846,43 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
     const itemPermissao = permissaoRows[0];
     const podeAprovarReservaCarro = Number(itemPermissao.aprovar_reserva_carro) === 1;
 
+    let setoresFilhos = [];
+    let setorPaiDoUsuario = null;
+
+    const [vinculoRows] = await conn.query(`
+      SELECT
+        ous.ID,
+        ous.ID_USUARIO,
+        ous.ID_SETOR_ORGANOGRAMA,
+        ous.PRECISA_APROCAVAO,
+        ous.STATUS
+      FROM SF_ORGANOGRAMA_USUARIO_SETOR ous
+      WHERE ous.ID_USUARIO = ?
+        AND ous.STATUS = 1
+      ORDER BY ous.ID ASC
+      LIMIT 1
+    `, [usuarioId]);
+
+    if (vinculoRows.length) {
+      setorPaiDoUsuario = Number(vinculoRows[0].ID_SETOR_ORGANOGRAMA || 0);
+
+      if (setorPaiDoUsuario) {
+        const [filhosRows] = await conn.query(`
+          SELECT DISTINCT o.id_setor_filho
+          FROM SF_ORGANOGRAMA o
+          INNER JOIN SF_ORGANOGRAMA_SETOR sFilho
+            ON sFilho.ID = o.id_setor_filho
+           AND sFilho.STATUS = 1
+          WHERE o.id_setor_pai = ?
+            AND o.status = 1
+        `, [setorPaiDoUsuario]);
+
+        setoresFilhos = filhosRows
+          .map(item => Number(item.id_setor_filho || 0))
+          .filter(Boolean);
+      }
+    }
+
     let sql = `
       SELECT
         rc.id,
@@ -7869,6 +7906,7 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
               ON o.id_setor_filho = ous.ID_SETOR_ORGANOGRAMA
              AND o.status = 1
             WHERE ous.ID_USUARIO = uSolicitante.ID
+              AND ous.STATUS = 1
               AND LOWER(TRIM(COALESCE(ous.PRECISA_APROCAVAO, ''))) = 'sim'
             LIMIT 1
           ) THEN 'PENDENTE GESTOR'
@@ -7892,10 +7930,28 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
     const params = [];
 
     if (!podeAprovarReservaCarro) {
-      sql += `
-        WHERE UPPER(TRIM(rc.usuario_solicitante)) = UPPER(TRIM(?))
-      `;
+      sql += ` WHERE (UPPER(TRIM(rc.usuario_solicitante)) = UPPER(TRIM(?))`;
       params.push(usuarioSolicitante);
+
+      if (setoresFilhos.length) {
+        const placeholders = setoresFilhos.map(() => '?').join(', ');
+
+        sql += `
+          OR EXISTS (
+            SELECT 1
+            FROM SF_USUARIO uFilho
+            INNER JOIN SF_ORGANOGRAMA_USUARIO_SETOR ousFilho
+              ON ousFilho.ID_USUARIO = uFilho.ID
+             AND ousFilho.STATUS = 1
+            WHERE UPPER(TRIM(uFilho.NOME)) = UPPER(TRIM(rc.usuario_solicitante))
+              AND ousFilho.ID_SETOR_ORGANOGRAMA IN (${placeholders})
+          )
+        `;
+
+        params.push(...setoresFilhos);
+      }
+
+      sql += `)`;
     }
 
     sql += `
@@ -7917,7 +7973,14 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
 
     return res.json({
       success: true,
-      items: rows
+      items: rows,
+      escopo: {
+        usuarioId,
+        usuarioSolicitante,
+        podeAprovarReservaCarro,
+        setorPaiDoUsuario,
+        setoresFilhos
+      }
     });
 
   } catch (err) {
@@ -8415,7 +8478,6 @@ app.post('/api/reservas-carro/:id/aprovar', async (req, res) => {
   }
 });
 
-
 app.post('/api/reservas-carro/:id/recusar', async (req, res) => {
   let conn;
 
@@ -8543,7 +8605,6 @@ app.post('/api/reservas-carro/:id/recusar', async (req, res) => {
     if (conn) conn.release();
   }
 });
-
 
 app.delete('/api/reservas-carro/:id', async (req, res) => {
   let conn;
@@ -10247,7 +10308,6 @@ app.get('/api/local-trabalho', async (req, res) => {
   }
 });
 
-
 // Listar vínculos do organograma
 app.get('/api/organograma', async (req, res) => {
   let conn;
@@ -10306,7 +10366,6 @@ app.get('/api/organograma', async (req, res) => {
   }
 });
 
-
 // Buscar vínculo específico do organograma
 app.get('/api/organograma/:id', async (req, res) => {
   let conn;
@@ -10363,7 +10422,6 @@ app.get('/api/organograma/:id', async (req, res) => {
     if (conn) conn.release();
   }
 });
-
 
 // Criar vínculo do organograma
 app.post('/api/organograma', async (req, res) => {
@@ -10500,7 +10558,6 @@ app.post('/api/organograma', async (req, res) => {
     if (conn) conn.release();
   }
 });
-
 
 // Atualizar vínculo do organograma
 app.put('/api/organograma/:id', async (req, res) => {
@@ -10660,7 +10717,6 @@ app.put('/api/organograma/:id', async (req, res) => {
     if (conn) conn.release();
   }
 });
-
 
 // Excluir vínculo do organograma
 app.delete('/api/organograma/:id', async (req, res) => {
