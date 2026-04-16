@@ -7424,7 +7424,7 @@ app.post('/api/reservas-carro', async (req, res) => {
     await conn.beginTransaction();
 
     const usuarioSolicitanteNormalizado = normalizarTexto(usuario_solicitante);
-    const nomeColaboradorNormalizado = normalizarTexto(nome_colaborador || usuario_solicitante);
+    const nome_colaboradorNormalizado = normalizarTexto(nome_colaborador || usuario_solicitante);
 
     const conflito = await validarConflitoReservaCarro(conn, {
       usuarioSolicitante: usuarioSolicitanteNormalizado,
@@ -7440,7 +7440,7 @@ app.post('/api/reservas-carro', async (req, res) => {
       });
     }
 
-    const dadosColaborador = await buscar_dados_colaborador_por_nome(conn, nomeColaboradorNormalizado);
+    const dadosColaborador = await buscar_dados_colaborador_por_nome(conn, nome_colaboradorNormalizado);
 
     if (!dadosColaborador) {
       await conn.rollback();
@@ -7479,7 +7479,7 @@ app.post('/api/reservas-carro', async (req, res) => {
       1,
       normalizarTexto(foto_aceite_termo),
       normalizarTexto(termo_versao) || '2026-04',
-      nomeColaboradorNormalizado,
+      nome_colaboradorNormalizado,
       normalizarTexto(matricula_colaborador) || null,
       normalizarTexto(dadosColaborador.cpf_colaborador) || null,
       normalizarTexto(dadosColaborador.cnh_colaborador) || null,
@@ -7666,16 +7666,16 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
         rc.data_aprovacao_gestor,
         rc.veiculo_id,
 
-        rc.termoaceito,
-        rc.dataaceitetermo,
-        rc.fotoaceitetermo,
-        rc.termoversao,
-        rc.nomecolaborador,
-        rc.matriculacolaborador,
-        rc.cpfcolaborador,
-        rc.cnhcolaborador,
-        rc.categoriacnh,
-        rc.validadecnh,
+        rc.termo_aceito,
+        rc.data_aceite_termo,
+        rc.foto_aceite_termo,
+        rc.termo_versao,
+        rc.nome_colaborador,
+        rc.matricula_colaborador,
+        rc.cpf_colaborador,
+        rc.cnh_colaborador,
+        rc.categoria_cnh,
+        rc.validade_cnh,
 
         rc.checklist_saida,
         rc.km_saida,
@@ -7866,7 +7866,7 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
         SELECT
           rc.id,
           rc.status_solicitacao,
-          rc.termoaceito
+          rc.termo_aceito
         FROM SF_RESERVA_CARRO rc
         WHERE rc.id = ?
         LIMIT 1
@@ -7892,7 +7892,7 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
       });
     }
 
-    if (Number(reserva.termoaceito || 0) !== 1) {
+    if (Number(reserva.termo_aceito || 0) !== 1) {
       await conn.rollback();
       return res.status(400).json({
         success: false,
@@ -8137,8 +8137,8 @@ function normalizarStatusReserva(v) {
   return normalizarTexto(v).toUpperCase();
 }
 
-async function buscar_dados_colaborador_por_nome(conn, nomeColaborador) {
-  const nomeNormalizado = normalizarTexto(nomeColaborador);
+async function buscar_dados_colaborador_por_nome(conn, nome_colaborador) {
+  const nomeNormalizado = normalizarTexto(nome_colaborador);
 
   if (!nomeNormalizado) {
     return null;
@@ -8273,7 +8273,7 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
     }
 
     const usuarioSolicitanteNormalizado = normalizarTexto(usuario_solicitante);
-    const nomeColaboradorNormalizado = normalizarTexto(nome_colaborador || usuario_solicitante);
+    const nome_colaboradorNormalizado = normalizarTexto(nome_colaborador || usuario_solicitante);
 
     const conflito = await validarConflitoReservaCarro(conn, {
       usuarioSolicitante: usuarioSolicitanteNormalizado,
@@ -8290,7 +8290,7 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       });
     }
 
-    const dadosColaborador = await buscar_dados_colaborador_por_nome(conn, nomeColaboradorNormalizado);
+    const dadosColaborador = await buscar_dados_colaborador_por_nome(conn, nome_colaboradorNormalizado);
 
     if (!dadosColaborador) {
       await conn.rollback();
@@ -8330,7 +8330,7 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       1,
       normalizarTexto(foto_aceite_termo),
       normalizarTexto(termo_versao) || '2026-04',
-      nomeColaboradorNormalizado,
+      nome_colaboradorNormalizado,
       normalizarTexto(matricula_colaborador) || null,
       normalizarTexto(dadosColaborador.cpf_colaborador) || null,
       normalizarTexto(dadosColaborador.cnh_colaborador) || null,
