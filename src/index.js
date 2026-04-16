@@ -11035,6 +11035,11 @@ app.delete('/api/organograma-setores/:id', async (req, res) => {
 // VÍNCULOS DE USUÁRIOS AO SETOR DO ORGANOGRAMA
 // =========================
 
+function normalizarPrecisaAprocavao(value) {
+  const v = String(value ?? '').trim().toLowerCase();
+  return v === 'sim' ? 'sim' : 'nao';
+}
+
 // Listar vínculos de usuários x setores do organograma
 app.get('/api/organograma-usuarios-vinculos', async (req, res) => {
   try {
@@ -11046,6 +11051,7 @@ app.get('/api/organograma-usuarios-vinculos', async (req, res) => {
         u.EMAIL AS EMAIL_USUARIO,
         vus.ID_SETOR_ORGANOGRAMA,
         s.NOME AS NOME_SETOR,
+        vus.PRECISA_APROCAVAO,
         vus.STATUS,
         vus.CRIADO_EM,
         vus.ATUALIZADO_EM
@@ -11069,7 +11075,6 @@ app.get('/api/organograma-usuarios-vinculos', async (req, res) => {
   }
 });
 
-
 // Buscar vínculo de usuário x setor por id
 app.get('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
   try {
@@ -11090,6 +11095,7 @@ app.get('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
         u.EMAIL AS EMAIL_USUARIO,
         vus.ID_SETOR_ORGANOGRAMA,
         s.NOME AS NOME_SETOR,
+        vus.PRECISA_APROCAVAO,
         vus.STATUS,
         vus.CRIADO_EM,
         vus.ATUALIZADO_EM
@@ -11121,14 +11127,30 @@ app.get('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
   }
 });
 
-
 // Criar vínculo usuário x setor do organograma
 app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
-  
-  console.log(req.body);
   try {
-    const idUsuario = Number(req.body?.id_usuario ?? req.body?.idUsuario ?? req.body?.idusuario);
-    const idSetorOrganograma = Number(req.body?.id_setor_organograma ?? req.body?.idSetorOrganograma ?? req.body?.idsetororganograma);
+    const idUsuario = Number(
+      req.body?.id_usuario ??
+      req.body?.idUsuario ??
+      req.body?.idusuario
+    );
+
+    const idSetorOrganograma = Number(
+      req.body?.id_setor_organograma ??
+      req.body?.idSetorOrganograma ??
+      req.body?.idsetororganograma
+    );
+
+    const precisaaprocavao = normalizarPrecisaAprocavao(
+      req.body?.precisa_aprocavao ??
+      req.body?.precisaAprocavao ??
+      req.body?.precisaaprocavao ??
+      req.body?.precisa_aprovacao ??
+      req.body?.precisaAprovacao ??
+      req.body?.precisaaprovacao
+    );
+
     const status = Number(req.body?.status ?? 1) ? 1 : 0;
 
     if (!idUsuario || !idSetorOrganograma) {
@@ -11179,9 +11201,9 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
 
     const [result] = await pool.query(`
       INSERT INTO SF_ORGANOGRAMA_USUARIO_SETOR
-      (ID_USUARIO, ID_SETOR_ORGANOGRAMA, STATUS)
-      VALUES (?, ?, ?)
-    `, [idUsuario, idSetorOrganograma, status]);
+      (ID_USUARIO, ID_SETOR_ORGANOGRAMA, PRECISA_APROCAVAO, STATUS)
+      VALUES (?, ?, ?, ?)
+    `, [idUsuario, idSetorOrganograma, precisaaprocavao, status]);
 
     const [itemRows] = await pool.query(`
       SELECT
@@ -11191,6 +11213,7 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
         u.EMAIL AS EMAIL_USUARIO,
         vus.ID_SETOR_ORGANOGRAMA,
         s.NOME AS NOME_SETOR,
+        vus.PRECISA_APROCAVAO,
         vus.STATUS,
         vus.CRIADO_EM,
         vus.ATUALIZADO_EM
@@ -11223,13 +11246,32 @@ app.post('/api/organograma-usuarios-vinculos', async (req, res) => {
   }
 });
 
-
 // Atualizar vínculo usuário x setor do organograma
 app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const idUsuario = Number(req.body?.id_usuario ?? req.body?.idUsuario ?? req.body?.idusuario);
-    const idSetorOrganograma = Number(req.body?.id_setor_organograma ?? req.body?.idSetorOrganograma ?? req.body?.idsetororganograma);
+
+    const idUsuario = Number(
+      req.body?.id_usuario ??
+      req.body?.idUsuario ??
+      req.body?.idusuario
+    );
+
+    const idSetorOrganograma = Number(
+      req.body?.id_setor_organograma ??
+      req.body?.idSetorOrganograma ??
+      req.body?.idsetororganograma
+    );
+
+    const precisaaprocavao = normalizarPrecisaAprocavao(
+      req.body?.precisa_aprocavao ??
+      req.body?.precisaAprocavao ??
+      req.body?.precisaaprocavao ??
+      req.body?.precisa_aprovacao ??
+      req.body?.precisaAprovacao ??
+      req.body?.precisaaprovacao
+    );
+
     const status = Number(req.body?.status ?? 1) ? 1 : 0;
 
     if (!id) {
@@ -11303,9 +11345,10 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
       SET
         ID_USUARIO = ?,
         ID_SETOR_ORGANOGRAMA = ?,
+        PRECISA_APROCAVAO = ?,
         STATUS = ?
       WHERE ID = ?
-    `, [idUsuario, idSetorOrganograma, status, id]);
+    `, [idUsuario, idSetorOrganograma, precisaaprocavao, status, id]);
 
     const [itemRows] = await pool.query(`
       SELECT
@@ -11315,6 +11358,7 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
         u.EMAIL AS EMAIL_USUARIO,
         vus.ID_SETOR_ORGANOGRAMA,
         s.NOME AS NOME_SETOR,
+        vus.PRECISA_APROCAVAO,
         vus.STATUS,
         vus.CRIADO_EM,
         vus.ATUALIZADO_EM
@@ -11346,7 +11390,6 @@ app.put('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
     });
   }
 });
-
 
 // Excluir vínculo usuário x setor do organograma
 app.delete('/api/organograma-usuarios-vinculos/:id', async (req, res) => {
