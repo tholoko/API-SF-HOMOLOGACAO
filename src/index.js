@@ -8886,16 +8886,24 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
   }
 });
 
-app.get('/api/permissoes/aprovar-reserva-carro/:usuarioId', async (req, res) => {
+app.get('/api/permissoes/aprovar-reserva-carro/:usuarioId/:status', async (req, res) => {
   let conn;
 
   try {
     const usuarioId = Number(req.params.usuarioId);
+    const statusRecebido = String(req.params.status || '').trim().toUpperCase();
 
     if (!usuarioId) {
       return res.status(400).json({
         success: false,
         message: 'Informe um usuário válido.'
+      });
+    }
+
+    if (!statusRecebido) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um status válido.'
       });
     }
 
@@ -8908,13 +8916,19 @@ app.get('/api/permissoes/aprovar-reserva-carro/:usuarioId', async (req, res) => 
         u.PERFIL AS perfil_usuario,
         p.id AS id_perfil,
         p.nome AS nome_perfil,
-        COALESCE(p.aprovar_reserva_carro, 0) AS aprovarreservacarro
+        COALESCE(p.aprovar_reserva_carro, 0) AS aprovarreservacarro,
+        COALESCE(p.aprovar_reserva_carro_gestao, 0) AS aprovarreservacarrogestao,
+        CASE
+          WHEN ? = 'PENDENTE GESTOR' THEN COALESCE(p.aprovar_reserva_carro_gestao, 0)
+          WHEN ? IN ('PENDENTE FROTA', 'PENDENTE') THEN COALESCE(p.aprovar_reserva_carro, 0)
+          ELSE 0
+        END AS permissaovalida
       FROM SF_USUARIO u
       LEFT JOIN SF_PERFIL p
         ON UPPER(TRIM(p.nome)) = UPPER(TRIM(u.PERFIL))
       WHERE u.ID = ?
       LIMIT 1
-    `, [usuarioId]);
+    `, [statusRecebido, statusRecebido, usuarioId]);
 
     if (!rows.length) {
       return res.status(404).json({
@@ -8933,7 +8947,10 @@ app.get('/api/permissoes/aprovar-reserva-carro/:usuarioId', async (req, res) => 
         perfilusuario: item.perfil_usuario,
         idperfil: item.id_perfil,
         nomeperfil: item.nome_perfil,
-        aprovarreservacarro: Number(item.aprovarreservacarro) === 1 ? 1 : 0
+        statusconsultado: statusRecebido,
+        aprovarreservacarro: Number(item.aprovarreservacarro) === 1 ? 1 : 0,
+        aprovarreservacarrogestao: Number(item.aprovarreservacarrogestao) === 1 ? 1 : 0,
+        permissaovalida: Number(item.permissaovalida) === 1 ? 1 : 0
       }
     });
   } catch (err) {
