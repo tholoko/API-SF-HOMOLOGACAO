@@ -7560,7 +7560,7 @@ app.get('/api/reservas-carro', async (req, res) => {
               AND LOWER(TRIM(COALESCE(ous.PRECISA_APROCAVAO, ''))) = 'sim'
             LIMIT 1
           ) THEN 'PENDENTE GESTOR'
-          ELSE 'PENDENTE FRONTA'
+          ELSE 'PENDENTE FROTA'
         END AS status_solicitacao,
 
         GROUP_CONCAT(lt.nome ORDER BY lt.nome SEPARATOR ' | ') AS destinos
@@ -7872,7 +7872,7 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
               AND LOWER(TRIM(COALESCE(ous.PRECISA_APROCAVAO, ''))) = 'sim'
             LIMIT 1
           ) THEN 'PENDENTE GESTOR'
-          ELSE 'PENDENTE FRONTA'
+          ELSE 'PENDENTE FROTA'
         END AS status_solicitacao,
 
         GROUP_CONCAT(lt.nome ORDER BY lt.nome SEPARATOR ' | ') AS destinos
