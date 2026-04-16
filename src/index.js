@@ -7544,13 +7544,38 @@ app.get('/api/reservas-carro', async (req, res) => {
         rc.observacoes,
         rc.usuario_solicitante,
         rc.data_solicitacao,
-        rc.status_solicitacao,
+
+        CASE
+          WHEN UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) <> 'PENDENTE' THEN rc.status_solicitacao
+          WHEN EXISTS (
+            SELECT 1
+            FROM SF_ORGANOGRAMA_USUARIO_SETOR ous
+            INNER JOIN SF_ORGANOGRAMA_SETOR os
+              ON os.ID = ous.ID_SETOR_ORGANOGRAMA
+             AND os.STATUS = 1
+            INNER JOIN SF_ORGANOGRAMA o
+              ON o.id_setor_filho = ous.ID_SETOR_ORGANOGRAMA
+             AND o.status = 1
+            WHERE ous.ID_USUARIO = u.ID
+              AND LOWER(TRIM(COALESCE(ous.PRECISA_APROCAVAO, ''))) = 'sim'
+            LIMIT 1
+          ) THEN 'PENDENTE GESTOR'
+          ELSE 'PENDENTE FRONTA'
+        END AS status_solicitacao,
+
         GROUP_CONCAT(lt.nome ORDER BY lt.nome SEPARATOR ' | ') AS destinos
+
       FROM SF_RESERVA_CARRO rc
+
       LEFT JOIN SF_RESERVA_CARRO_DESTINO rcd
         ON rcd.reserva_id = rc.id
+
       LEFT JOIN SF_LOCAL_TRABALHO lt
         ON lt.id = rcd.local_trabalho_id
+
+      LEFT JOIN SF_USUARIO u
+        ON UPPER(TRIM(u.NOME)) = UPPER(TRIM(rc.usuario_solicitante))
+
       GROUP BY
         rc.id,
         rc.tipo_veiculo,
@@ -7560,7 +7585,9 @@ app.get('/api/reservas-carro', async (req, res) => {
         rc.observacoes,
         rc.usuario_solicitante,
         rc.data_solicitacao,
-        rc.status_solicitacao
+        rc.status_solicitacao,
+        u.ID
+
       ORDER BY rc.id DESC
     `);
 
