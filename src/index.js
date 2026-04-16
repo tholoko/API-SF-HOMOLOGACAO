@@ -7708,13 +7708,10 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
         v.status_veiculo AS veiculo_status
 
       FROM SF_RESERVA_CARRO rc
-
       LEFT JOIN SF_VEICULOS v
         ON v.id = rc.veiculo_id
-
       LEFT JOIN SF_USUARIO u
         ON UPPER(TRIM(u.NOME)) = UPPER(TRIM(rc.usuario_solicitante))
-
       WHERE rc.id = ?
       LIMIT 1
     `, [idReserva]);
