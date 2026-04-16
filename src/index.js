@@ -8917,9 +8917,9 @@ app.get('/api/permissoes/aprovar-reserva-carro/:usuarioId/:status', async (req, 
         p.id AS id_perfil,
         p.nome AS nome_perfil,
         COALESCE(p.aprovar_reserva_carro, 0) AS aprovarreservacarro,
-        COALESCE(p.aprovar_reserva_carro_gestao, 0) AS aprovarreservacarrogestao,
+        COALESCE(p.aprovar_reserva_carro_gestor, 0) AS aprovarreservacarrogestao,
         CASE
-          WHEN ? = 'PENDENTE GESTOR' THEN COALESCE(p.aprovar_reserva_carro_gestao, 0)
+          WHEN ? = 'PENDENTE GESTOR' THEN COALESCE(p.aprovar_reserva_carro_gestor, 0)
           WHEN ? IN ('PENDENTE FROTA', 'PENDENTE') THEN COALESCE(p.aprovar_reserva_carro, 0)
           ELSE 0
         END AS permissaovalida
