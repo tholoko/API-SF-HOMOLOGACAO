@@ -7799,6 +7799,96 @@ app.put('/api/reservas-carro/:id/status', async (req, res) => {
   }
 });
 
+app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
+  let conn;
+  try {
+    const idReserva = Number(req.params.id);
+    const usuarioAprovacaoGestor = String(req.body?.usuarioAprovacaoGestor || '').trim();
+
+    if (!idReserva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de reserva válido.'
+      });
+    }
+
+    if (!usuarioAprovacaoGestor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário de aprovação do gestor não informado.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const rows = await conn.query(
+      `SELECT id, statussolicitacao, termoaceito
+       FROM SFRESERVACARRO
+       WHERE id = ?
+       LIMIT 1`,
+      [idReserva]
+    );
+
+    const reserva = rows?.[0];
+
+    if (!reserva) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada.'
+      });
+    }
+
+    if (String(reserva.statussolicitacao || '').trim().toUpperCase() !== 'PENDENTE GESTOR') {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'A reserva não está pendente de aprovação do gestor.'
+      });
+    }
+
+    if (Number(reserva.termoaceito || 0) !== 1) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'A reserva não possui termo aceito.'
+      });
+    }
+
+    await conn.query(
+      `
+        UPDATE SFRESERVACARRO
+        SET
+          statussolicitacao = 'PENDENTE',
+          usuariogestoraprovacao = ?,
+          datagestoraprovacao = NOW()
+        WHERE id = ?
+      `,
+      [usuarioAprovacaoGestor, idReserva]
+    );
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Reserva aprovada pelo gestor e enviada para a etapa da logística.'
+    });
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch {}
+    }
+
+    console.error('Erro ao aprovar reserva pelo gestor.', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao aprovar reserva pelo gestor.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
 
 app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
   let conn;
