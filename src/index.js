@@ -7901,8 +7901,8 @@ async function buscar_dados_colaborador_por_nome(conn, nomeColaborador) {
       u.NOME AS nome,
       COALESCE(u.CPF, '') AS cpf_colaborador,
       COALESCE(u.CNH, '') AS cnh_colaborador,
-      COALESCE(u.CATEGORIA_CNH, '') AS categoria_cnh,
-      u.VALIDADE_CNH AS validade_cnh
+      COALESCE(u.CNH_CATEGORIA, '') AS categoria_cnh,
+      u.CNH_VALIDADE AS validade_cnh
     FROM SF_USUARIO u
     WHERE UPPER(TRIM(u.NOME)) = UPPER(TRIM(?))
     LIMIT 1
