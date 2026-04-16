@@ -7360,21 +7360,24 @@ app.post('/api/reservas-carro', async (req, res) => {
 
   try {
     const {
-      tipoVeiculo,
-      dataNecessaria,
-      previsaoDevolucao,
+      tipo_veiculo,
+      data_necessaria,
+      previsao_devolucao,
       destinos,
       observacoes,
       urgencia,
-      usuarioSolicitante
+      usuario_solicitante,
+      termo_aceito,
+      foto_aceite_termo,
+      termo_versao,
+      nome_colaborador,
+      matricula_colaborador
     } = req.body || {};
 
-    console.log(tipoVeiculo, dataNecessaria, previsaoDevolucao, urgencia, usuarioSolicitante);
-
-    if (!tipoVeiculo || !dataNecessaria || !previsaoDevolucao || !urgencia || !usuarioSolicitante) {
+    if (!tipo_veiculo || !data_necessaria || !previsao_devolucao || !urgencia || !usuario_solicitante) {
       return res.status(400).json({
         success: false,
-        message: 'Informe tipoVeiculo, dataNecessaria, previsaoDevolucao, urgencia e usuarioSolicitante.'
+        message: 'Informe tipo_veiculo, data_necessaria, previsao_devolucao, urgencia e usuario_solicitante.'
       });
     }
 
@@ -7385,8 +7388,22 @@ app.post('/api/reservas-carro', async (req, res) => {
       });
     }
 
-    const dataNecessariaMysql = datetimeLocalToMysql(dataNecessaria);
-    const previsaoDevolucaoMysql = datetimeLocalToMysql(previsaoDevolucao);
+    if (Number(termo_aceito) !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'É obrigatório aceitar o termo de responsabilidade.'
+      });
+    }
+
+    if (!normalizarTexto(foto_aceite_termo)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A foto do aceite do termo é obrigatória.'
+      });
+    }
+
+    const dataNecessariaMysql = datetimeLocalToMysql(data_necessaria);
+    const previsaoDevolucaoMysql = datetimeLocalToMysql(previsao_devolucao);
 
     if (!dataNecessariaMysql || !previsaoDevolucaoMysql) {
       return res.status(400).json({
@@ -7406,7 +7423,8 @@ app.post('/api/reservas-carro', async (req, res) => {
     await conn.query("SET time_zone = '-03:00'");
     await conn.beginTransaction();
 
-    const usuarioSolicitanteNormalizado = normalizarTexto(usuarioSolicitante);
+    const usuarioSolicitanteNormalizado = normalizarTexto(usuario_solicitante);
+    const nomeColaboradorNormalizado = normalizarTexto(nome_colaborador || usuario_solicitante);
 
     const conflito = await validarConflitoReservaCarro(conn, {
       usuarioSolicitante: usuarioSolicitanteNormalizado,
@@ -7422,6 +7440,16 @@ app.post('/api/reservas-carro', async (req, res) => {
       });
     }
 
+    const dadosColaborador = await buscar_dados_colaborador_por_nome(conn, nomeColaboradorNormalizado);
+
+    if (!dadosColaborador) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Colaborador não encontrado na tabela SF_USUARIO.'
+      });
+    }
+
     const [insertReserva] = await conn.query(`
       INSERT INTO SF_RESERVA_CARRO (
         tipo_veiculo,
@@ -7429,15 +7457,34 @@ app.post('/api/reservas-carro', async (req, res) => {
         previsao_devolucao,
         urgencia,
         observacoes,
-        usuario_solicitante
-      ) VALUES (?, ?, ?, ?, ?, ?)
+        usuario_solicitante,
+        termo_aceito,
+        data_aceite_termo,
+        foto_aceite_termo,
+        termo_versao,
+        nome_colaborador,
+        matricula_colaborador,
+        cpf_colaborador,
+        cnh_colaborador,
+        categoria_cnh,
+        validade_cnh
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      normalizarTexto(tipoVeiculo).toUpperCase(),
+      normalizarTexto(tipo_veiculo).toUpperCase(),
       dataNecessariaMysql,
       previsaoDevolucaoMysql,
       normalizarTexto(urgencia).toUpperCase(),
       observacoes ? normalizarTexto(observacoes) : null,
-      usuarioSolicitanteNormalizado
+      usuarioSolicitanteNormalizado,
+      1,
+      normalizarTexto(foto_aceite_termo),
+      normalizarTexto(termo_versao) || '2026-04',
+      nomeColaboradorNormalizado,
+      normalizarTexto(matricula_colaborador) || null,
+      normalizarTexto(dadosColaborador.cpf_colaborador) || null,
+      normalizarTexto(dadosColaborador.cnh_colaborador) || null,
+      normalizarTexto(dadosColaborador.categoria_cnh) || null,
+      dadosColaborador.validade_cnh || null
     ]);
 
     const reservaId = Number(insertReserva.insertId);
@@ -7841,22 +7888,48 @@ function normalizarStatusReserva(v) {
   return normalizarTexto(v).toUpperCase();
 }
 
+async function buscar_dados_colaborador_por_nome(conn, nomeColaborador) {
+  const nomeNormalizado = normalizarTexto(nomeColaborador);
+
+  if (!nomeNormalizado) {
+    return null;
+  }
+
+  const [rows] = await conn.query(`
+    SELECT
+      u.ID AS usuario_id,
+      u.NOME AS nome,
+      COALESCE(u.CPF, '') AS cpf_colaborador,
+      COALESCE(u.CNH, '') AS cnh_colaborador,
+      COALESCE(u.CATEGORIA_CNH, '') AS categoria_cnh,
+      u.VALIDADE_CNH AS validade_cnh
+    FROM SF_USUARIO u
+    WHERE UPPER(TRIM(u.NOME)) = UPPER(TRIM(?))
+    LIMIT 1
+  `, [nomeNormalizado]);
+
+  return rows?.[0] || null;
+}
+
 app.put('/api/reservas-carro/:id', async (req, res) => {
   let conn;
 
   try {
     const idReserva = Number(req.params.id);
     const {
-      tipoVeiculo,
-      dataNecessaria,
-      previsaoDevolucao,
+      tipo_veiculo,
+      data_necessaria,
+      previsao_devolucao,
       destinos,
       observacoes,
       urgencia,
-      usuarioSolicitante
+      usuario_solicitante,
+      termo_aceito,
+      foto_aceite_termo,
+      termo_versao,
+      nome_colaborador,
+      matricula_colaborador
     } = req.body || {};
-
-    console.log(req.body)
 
     if (!idReserva) {
       return res.status(400).json({
@@ -7865,10 +7938,10 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       });
     }
 
-    if (!tipoVeiculo || !dataNecessaria || !previsaoDevolucao || !urgencia || !usuarioSolicitante) {
+    if (!tipo_veiculo || !data_necessaria || !previsao_devolucao || !urgencia || !usuario_solicitante) {
       return res.status(400).json({
         success: false,
-        message: 'Informe tipoVeiculo, dataNecessaria, previsaoDevolucao, urgencia e usuarioSolicitante.'
+        message: 'Informe tipo_veiculo, data_necessaria, previsao_devolucao, urgencia e usuario_solicitante.'
       });
     }
 
@@ -7879,8 +7952,22 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       });
     }
 
-    const dataNecessariaMysql = datetimeLocalToMysql(dataNecessaria);
-    const previsaoDevolucaoMysql = datetimeLocalToMysql(previsaoDevolucao);
+    if (Number(termo_aceito) !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'É obrigatório aceitar o termo de responsabilidade.'
+      });
+    }
+
+    if (!normalizarTexto(foto_aceite_termo)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A foto do aceite do termo é obrigatória.'
+      });
+    }
+
+    const dataNecessariaMysql = datetimeLocalToMysql(data_necessaria);
+    const previsaoDevolucaoMysql = datetimeLocalToMysql(previsao_devolucao);
 
     if (!dataNecessariaMysql || !previsaoDevolucaoMysql) {
       return res.status(400).json({
@@ -7928,7 +8015,7 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       });
     }
 
-    if (normalizarTexto(reserva.usuario_solicitante).toUpperCase() !== normalizarTexto(usuarioSolicitante).toUpperCase()) {
+    if (normalizarTexto(reserva.usuario_solicitante).toUpperCase() !== normalizarTexto(usuario_solicitante).toUpperCase()) {
       await conn.rollback();
       return res.status(403).json({
         success: false,
@@ -7936,7 +8023,8 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       });
     }
 
-    const usuarioSolicitanteNormalizado = normalizarTexto(usuarioSolicitante);
+    const usuarioSolicitanteNormalizado = normalizarTexto(usuario_solicitante);
+    const nomeColaboradorNormalizado = normalizarTexto(nome_colaborador || usuario_solicitante);
 
     const conflito = await validarConflitoReservaCarro(conn, {
       usuarioSolicitante: usuarioSolicitanteNormalizado,
@@ -7953,6 +8041,16 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
       });
     }
 
+    const dadosColaborador = await buscar_dados_colaborador_por_nome(conn, nomeColaboradorNormalizado);
+
+    if (!dadosColaborador) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Colaborador não encontrado na tabela SF_USUARIO.'
+      });
+    }
+
     await conn.query(`
       UPDATE SF_RESERVA_CARRO
       SET
@@ -7961,15 +8059,34 @@ app.put('/api/reservas-carro/:id', async (req, res) => {
         previsao_devolucao = ?,
         urgencia = ?,
         observacoes = ?,
-        usuario_solicitante = ?
+        usuario_solicitante = ?,
+        termo_aceito = ?,
+        data_aceite_termo = NOW(),
+        foto_aceite_termo = ?,
+        termo_versao = ?,
+        nome_colaborador = ?,
+        matricula_colaborador = ?,
+        cpf_colaborador = ?,
+        cnh_colaborador = ?,
+        categoria_cnh = ?,
+        validade_cnh = ?
       WHERE id = ?
     `, [
-      normalizarTexto(tipoVeiculo).toUpperCase(),
+      normalizarTexto(tipo_veiculo).toUpperCase(),
       dataNecessariaMysql,
       previsaoDevolucaoMysql,
       normalizarTexto(urgencia).toUpperCase(),
       observacoes ? normalizarTexto(observacoes) : null,
       usuarioSolicitanteNormalizado,
+      1,
+      normalizarTexto(foto_aceite_termo),
+      normalizarTexto(termo_versao) || '2026-04',
+      nomeColaboradorNormalizado,
+      normalizarTexto(matricula_colaborador) || null,
+      normalizarTexto(dadosColaborador.cpf_colaborador) || null,
+      normalizarTexto(dadosColaborador.cnh_colaborador) || null,
+      normalizarTexto(dadosColaborador.categoria_cnh) || null,
+      dadosColaborador.validade_cnh || null,
       idReserva
     ]);
 
