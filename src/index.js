@@ -7884,7 +7884,7 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
       });
     }
 
-    if (String(reserva.status_solicitacao || '').trim().toUpperCase() !== 'PENDENTE GESTOR') {
+    if (String(reserva.status_solicitacao || '').trim().toUpperCase() !== 'PENDENTE') {
       await conn.rollback();
       return res.status(400).json({
         success: false,
