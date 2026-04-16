@@ -7930,7 +7930,9 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
     const params = [];
 
     if (!podeAprovarReservaCarro) {
-      sql += ` WHERE (UPPER(TRIM(rc.usuario_solicitante)) = UPPER(TRIM(?))`;
+      sql += ` WHERE (
+        UPPER(TRIM(rc.usuario_solicitante)) = UPPER(TRIM(?))
+      `;
       params.push(usuarioSolicitante);
 
       if (setoresFilhos.length) {
@@ -7951,7 +7953,7 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
         params.push(...setoresFilhos);
       }
 
-      sql += `)`;
+      sql += ` ) `;
     }
 
     sql += `
@@ -7966,8 +7968,24 @@ app.get('/api/reservas-carro/usuario/:usuarioSolicitante', async (req, res) => {
         rc.data_solicitacao,
         rc.status_solicitacao,
         uSolicitante.ID
-      ORDER BY rc.id DESC
     `;
+
+    if (!podeAprovarReservaCarro && setoresFilhos.length) {
+      sql += `
+        HAVING
+          (
+            UPPER(TRIM(usuario_solicitante)) = UPPER(TRIM(?))
+          )
+          OR
+          (
+            UPPER(TRIM(usuario_solicitante)) <> UPPER(TRIM(?))
+            AND status_solicitacao = 'PENDENTE GESTOR'
+          )
+      `;
+      params.push(usuarioSolicitante, usuarioSolicitante);
+    }
+
+    sql += ` ORDER BY rc.id DESC `;
 
     const [rows] = await conn.query(sql, params);
 
