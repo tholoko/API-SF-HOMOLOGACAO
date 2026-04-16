@@ -7662,8 +7662,8 @@ app.get('/api/reservas-carro/:id', async (req, res) => {
         rc.data_recusa,
         rc.usuario_aprovacao,
         rc.data_aprovacao,
-        rc.usuario_gestor_aprovacao,
-        rc.data_gestor_aprovacao,
+        rc.aprovador_gestor,
+        rc.data_aprovacao_gestor,
         rc.veiculo_id,
 
         rc.termoaceito,
@@ -7905,8 +7905,8 @@ app.post('/api/reservas-carro/:id/aprovar-gestor', async (req, res) => {
         UPDATE SF_RESERVA_CARRO
         SET
           status_solicitacao = 'PENDENTE FROTA',
-          usuario_gestor_aprovacao = ?,
-          data_gestor_aprovacao = NOW()
+          aprovador_gestor = ?,
+          data_aprovacao_gestor = NOW()
         WHERE id = ?
       `,
       [usuarioAprovacaoGestor, idReserva]
