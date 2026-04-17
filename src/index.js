@@ -8967,6 +8967,8 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         v.placa ASC
     `, params);
 
+    console.log(rows);
+
     return res.json({
       success: true,
       items: rows.map((item) => ({
