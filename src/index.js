@@ -8970,8 +8970,6 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
             MAX(id) AS max_id
           FROM SF_RESERVA_CARRO
           WHERE REPLACE(UPPER(TRIM(COALESCE(status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDO_CONFIRMACAO')
-            AND data_necessaria < ?
-            AND previsao_devolucao > ?
             AND veiculo_id IS NOT NULL
           GROUP BY veiculo_id
         ) ult
@@ -8980,7 +8978,6 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
       ) rc
         ON rc.veiculo_id = v.id
       WHERE COALESCE(v.ativo, 0) = 1
-      ${filtroTipoFrota}
       ORDER BY
         CASE
           WHEN COALESCE(v.ativo, 0) <> 1 THEN 4
@@ -9022,9 +9019,6 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
       FROM SF_RESERVA_CARRO rc
       WHERE REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDO_CONFIRMACAO')
         AND rc.veiculo_id IS NULL
-        AND rc.data_necessaria < ?
-        AND rc.previsao_devolucao > ?
-        ${filtroTipoSolicitacoes}
       ORDER BY
         rc.data_necessaria ASC,
         rc.id ASC
