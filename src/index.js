@@ -7536,11 +7536,6 @@ app.post('/api/reservas-carro', async (req, res) => {
   }
 });
 
-function normalizarTexto(valor) {
-  if (valor === undefined || valor === null) return '';
-  return String(valor).trim();
-}
-
 
 function normalizarCategoriasCNH(valor) {
   if (Array.isArray(valor)) {
