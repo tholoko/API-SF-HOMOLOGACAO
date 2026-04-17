@@ -8886,6 +8886,206 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
   }
 });
 
+app.get('/api/frota-carros-disponibilidade', async (req, res) => {
+  let conn;
+  try {
+    const data_necessaria = String(req.query.inicio || '').trim();
+    const previsao_devolucao = String(req.query.fim || '').trim();
+    const tipo_veiculo = String(req.query.tipo_veiculo || '').trim().toUpperCase();
+
+    const data_necessariaMysql = datetimeLocalToMysql(data_necessaria);
+    const previsao_devolucaoMysql = datetimeLocalToMysql(previsao_devolucao);
+
+    if (!data_necessariaMysql || !previsao_devolucaoMysql) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe início e fim válidos.'
+      });
+    }
+
+    if (previsao_devolucaoMysql <= data_necessariaMysql) {
+      return res.status(400).json({
+        success: false,
+        message: 'A data final deve ser maior que a inicial.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+
+    const params = [
+      previsao_devolucaoMysql,
+      data_necessariaMysql
+    ];
+
+    let filtroTipo = '';
+    if (tipo_veiculo && tipo_veiculo !== 'SEM PREFERÊNCIA') {
+      filtroTipo = ` AND UPPER(TRIM(COALESCE(rc.tipo_veiculo, v.status_veiculo, ''))) = ? `;
+      params.push(tipo_veiculo);
+    }
+
+    const rows = await conn.query(`
+      SELECT
+        v.id,
+        v.placa,
+        v.modelo,
+        v.marca,
+        v.cor,
+        v.ano,
+        v.km_atual,
+        v.status_veiculo,
+        v.ativo,
+        rc.id AS reservaidatual,
+        rc.usuario_solicitante,
+        rc.nome_colaborador,
+        rc.data_necessaria AS datareserva,
+        rc.previsao_devolucao AS previsao_devolucao,
+        CASE
+          WHEN COALESCE(v.ativo, 0) <> 1 THEN 'INATIVO'
+          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 'MANUTENCAO'
+          WHEN rc.id IS NOT NULL THEN 'EM USO'
+          ELSE 'DISPONIVEL'
+        END AS disponibilidade
+      FROM SF_VEICULOS v
+      LEFT JOIN SF_RESERVA_CARRO rc
+        ON rc.veiculoid = v.id
+       AND UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) IN ('APROVADA', 'AGUARDANDO CONFIRMACAO')
+       AND ? > rc.data_necessaria
+       AND ? < rc.previsao_devolucao
+      WHERE COALESCE(v.ativo, 0) = 1
+      ${filtroTipo}
+      ORDER BY
+        CASE
+          WHEN COALESCE(v.ativo, 0) <> 1 THEN 4
+          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 3
+          WHEN rc.id IS NOT NULL THEN 2
+          ELSE 1
+        END,
+        v.modelo ASC,
+        v.placa ASC
+    `, params);
+
+    return res.json({
+      success: true,
+      items: rows.map((item) => ({
+        id: item.id,
+        placa: item.placa,
+        modelo: item.modelo,
+        marca: item.marca,
+        cor: item.cor,
+        ano: item.ano,
+        km_atual: item.km_atual,
+        status_veiculo: item.status_veiculo,
+        ativo: item.ativo,
+        disponibilidade: item.disponibilidade,
+        previsao_devolucao: item.previsao_devolucao,
+        reserva_id_atual: item.reservaidatual,
+        solicitante_atual: item.nome_colaborador || item.usuario_solicitante || null,
+        data_reserva_atual: item.datareserva || null
+      }))
+    });
+  } catch (err) {
+    console.error('Erro ao listar frota por período:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar frota por período.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
+  let conn;
+  try {
+    const veiculo_id = Number(req.params.id);
+    const inicio = String(req.query.inicio || '').trim();
+    const fim = String(req.query.fim || '').trim();
+
+    if (!veiculo_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um id de veículo válido.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+
+    let sql = `
+      SELECT
+        rc.id,
+        rc.veiculo_id,
+        rc.usuario_solicitante,
+        rc.nome_colaborador,
+        rc.data_necessaria,
+        rc.previsao_devolucao,
+        rc.status_solicitacao
+      FROM SF_RESERVA_CARRO rc
+      WHERE rc.veiculo_id = ?
+        AND UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
+    `;
+    const params = [veiculo_id];
+
+    const inicioMysql = inicio ? datetimeLocalToMysql(inicio) : null;
+    const fimMysql = fim ? datetimeLocalToMysql(fim) : null;
+
+    if (inicioMysql && fimMysql) {
+      sql += ` AND ? > rc.data_necessaria AND ? < rc.previsao_devolucao `;
+      params.push(fimMysql, inicioMysql);
+    } else {
+      sql += ` AND rc.previsao_devolucao >= NOW() `;
+    }
+
+    sql += ` ORDER BY rc.previsao_devolucao ASC LIMIT 1 `;
+
+    const rowsReserva = await conn.query(sql, params);
+    const reserva = rowsReserva?.[0];
+
+    if (!reserva) {
+      return res.status(404).json({
+        success: false,
+        message: 'Nenhuma reserva ativa encontrada para este veículo.'
+      });
+    }
+
+    const destinos = await conn.query(`
+      SELECT
+        lt.id,
+        lt.nome
+      FROM SF_RESERVA_CARRO_DESTINO rcd
+      INNER JOIN SF_LOCAL_TRABALHO lt
+        ON lt.id = rcd.local_trabalho_id
+      WHERE rcd.reserva_id = ?
+      ORDER BY lt.nome
+    `, [reserva.id]);
+
+    return res.json({
+      success: true,
+      data: {
+        reserva_id: reserva.id,
+        veiculo_id: reserva.veiculo_id,
+        solicitante: reserva.nome_colaborador || reserva.usuario_solicitante,
+        usuario_solicitante: reserva.usuario_solicitante,
+        data_reserva: reserva.data_necessaria,
+        previsao_devolucao: reserva.previsao_devolucao,
+        status_solicitacao: reserva.status_solicitacao,
+        destinos
+      }
+    });
+  } catch (err) {
+    console.error('Erro ao buscar reserva ativa do veículo:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar reserva ativa do veículo.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get('/api/permissoes/aprovar-reserva-carro/:usuarioId/:status', async (req, res) => {
   let conn;
 
