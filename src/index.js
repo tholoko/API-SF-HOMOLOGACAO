@@ -8935,31 +8935,51 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         v.km_atual,
         v.status_veiculo,
         v.ativo,
-        rc.id AS reservaidatual,
+        rc.id AS reserva_id_atual,
         rc.usuario_solicitante,
         rc.nome_colaborador,
-        rc.data_necessaria AS datareserva,
-        rc.previsao_devolucao AS previsao_devolucao,
+        rc.data_necessaria AS data_reserva,
+        rc.previsao_devolucao,
         CASE
           WHEN COALESCE(v.ativo, 0) <> 1 THEN 'INATIVO'
-          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 'MANUTENCAO'
-          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'EM_USO' THEN 'EM_USO'
+          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'MANUTENCAO' THEN 'MANUTENCAO'
+          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') IN ('EM_USO', 'EMUSO') THEN 'EM_USO'
           WHEN rc.id IS NOT NULL THEN 'EM_USO'
           ELSE 'DISPONIVEL'
         END AS disponibilidade
       FROM SF_VEICULOS v
-      LEFT JOIN SF_RESERVA_CARRO rc
+      LEFT JOIN (
+        SELECT
+          rc1.id,
+          rc1.veiculo_id,
+          rc1.usuario_solicitante,
+          rc1.nome_colaborador,
+          rc1.data_necessaria,
+          rc1.previsao_devolucao,
+          rc1.status_solicitacao,
+          rc1.tipo_veiculo
+        FROM SF_RESERVA_CARRO rc1
+        INNER JOIN (
+          SELECT
+            veiculo_id,
+            MAX(id) AS max_id
+          FROM SF_RESERVA_CARRO
+          WHERE REPLACE(UPPER(TRIM(COALESCE(status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
+            AND ? > data_necessaria
+            AND ? < previsao_devolucao
+          GROUP BY veiculo_id
+        ) ult
+          ON ult.veiculo_id = rc1.veiculo_id
+        AND ult.max_id = rc1.id
+      ) rc
         ON rc.veiculo_id = v.id
-      AND UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) IN ('APROVADA', 'AGUARDANDO CONFIRMACAO')
-      AND ? > rc.data_necessaria
-      AND ? < rc.previsao_devolucao
       WHERE COALESCE(v.ativo, 0) = 1
       ${filtroTipo}
       ORDER BY
         CASE
           WHEN COALESCE(v.ativo, 0) <> 1 THEN 4
-          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 3
-          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'EM_USO' THEN 2
+          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'MANUTENCAO' THEN 3
+          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') IN ('EM_USO', 'EMUSO') THEN 2
           WHEN rc.id IS NOT NULL THEN 2
           ELSE 1
         END,
