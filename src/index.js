@@ -8943,21 +8943,23 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         CASE
           WHEN COALESCE(v.ativo, 0) <> 1 THEN 'INATIVO'
           WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 'MANUTENCAO'
+          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'EM_USO' THEN 'EM_USO'
           WHEN rc.id IS NOT NULL THEN 'EM_USO'
           ELSE 'DISPONIVEL'
         END AS disponibilidade
       FROM SF_VEICULOS v
       LEFT JOIN SF_RESERVA_CARRO rc
         ON rc.veiculo_id = v.id
-       AND UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) IN ('APROVADA', 'AGUARDANDO CONFIRMACAO')
-       AND ? > rc.data_necessaria
-       AND ? < rc.previsao_devolucao
+      AND UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) IN ('APROVADA', 'AGUARDANDO CONFIRMACAO')
+      AND ? > rc.data_necessaria
+      AND ? < rc.previsao_devolucao
       WHERE COALESCE(v.ativo, 0) = 1
       ${filtroTipo}
       ORDER BY
         CASE
           WHEN COALESCE(v.ativo, 0) <> 1 THEN 4
           WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 3
+          WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'EM_USO' THEN 2
           WHEN rc.id IS NOT NULL THEN 2
           ELSE 1
         END,
