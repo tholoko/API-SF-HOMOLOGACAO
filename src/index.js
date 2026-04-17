@@ -9017,7 +9017,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         rc.observacoes,
         rc.data_solicitacao
       FROM SF_RESERVA_CARRO rc
-      WHERE REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDO_CONFIRMACAO')
+      WHERE REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') NOT IN ('DEVOLVIDA', 'RECUSADA')
         AND rc.veiculo_id IS NULL
       ORDER BY
         rc.data_necessaria ASC,
