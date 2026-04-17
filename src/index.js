@@ -9018,7 +9018,6 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
 
 app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
   let conn;
-
   try {
     const veiculo_id = Number(req.params.id);
     const inicio = String(req.query.inicio || '').trim();
@@ -9032,7 +9031,6 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
     console.log('[RESERVA ATIVA] fim:', fim);
 
     if (!veiculo_id) {
-      console.log('[RESERVA ATIVA] ID inválido, retornando 400');
       return res.status(400).json({
         success: false,
         message: 'Informe um id de veículo válido.'
@@ -9053,7 +9051,7 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
         rc.previsao_devolucao,
         rc.status_solicitacao
       FROM SF_RESERVA_CARRO rc
-      WHERE rc.id = ?
+      WHERE rc.veiculo_id = ?
         AND REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
     `;
     const params = [veiculo_id];
@@ -9085,18 +9083,16 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
     console.log('[RESERVA ATIVA] Quantidade de reservas encontradas:', rowsReserva?.length || 0);
 
     const reserva = rowsReserva?.[0];
-
     console.log('[RESERVA ATIVA] reserva selecionada:', reserva);
 
     if (!reserva) {
-      console.log('[RESERVA ATIVA] Nenhuma reserva encontrada, retornando 404');
       return res.status(404).json({
         success: false,
         message: 'Nenhuma reserva ativa encontrada para este veículo.'
       });
     }
 
-    const sqlDestinos = `
+    const [destinos] = await conn.query(`
       SELECT
         lt.id,
         lt.nome
@@ -9105,17 +9101,9 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
         ON lt.id = rcd.local_trabalho_id
       WHERE rcd.reserva_id = ?
       ORDER BY lt.nome
-    `;
+    `, [reserva.id]);
 
-    console.log('\n[RESERVA ATIVA] SQL dos destinos:');
-    console.log(sqlDestinos);
-    console.log('[RESERVA ATIVA] Params dos destinos:', [reserva.id]);
-
-    const [destinos] = await conn.query(sqlDestinos, [reserva.id]);
-
-    console.log('[RESERVA ATIVA] destinos encontrados:', destinos);
-
-    const responseData = {
+    return res.json({
       success: true,
       data: {
         reserva_id: reserva.id,
@@ -9127,17 +9115,9 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
         status_solicitacao: reserva.status_solicitacao,
         destinos
       }
-    };
-
-    console.log('\n[RESERVA ATIVA] Resposta final:');
-    console.log(JSON.stringify(responseData, null, 2));
-    console.log('==============================\n');
-
-    return res.json(responseData);
+    });
   } catch (err) {
-    console.error('\n[RESERVA ATIVA] Erro ao buscar reserva ativa do veículo:');
-    console.error(err);
-
+    console.error('Erro ao buscar reserva ativa do veículo:', err);
     return res.status(500).json({
       success: false,
       message: 'Erro ao buscar reserva ativa do veículo.',
