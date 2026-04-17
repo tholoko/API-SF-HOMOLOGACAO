@@ -9036,20 +9036,20 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
 
       const sqlDestinos = `
         SELECT
-          rcd.reserva_carro_id,
+          rcd.reserva_id,
           lt.id AS destino_id,
           lt.nome AS destino_nome
         FROM SF_RESERVA_CARRO_DESTINO rcd
         INNER JOIN SF_LOCAL_TRABALHO lt
           ON lt.id = rcd.local_trabalho_id
-        WHERE rcd.reserva_carro_id IN (${placeholders})
-        ORDER BY rcd.reserva_carro_id ASC, lt.nome ASC
+        WHERE rcd.reserva_id IN (${placeholders})
+        ORDER BY rcd.reserva_id ASC, lt.nome ASC
       `;
 
       const [rowsDestinos] = await conn.query(sqlDestinos, idsSolicitacoes);
 
       destinosPorReserva = rowsDestinos.reduce((acc, item) => {
-        const reservaId = item.reserva_carro_id;
+        const reservaId = item.reserva_id;
 
         if (!acc[reservaId]) {
           acc[reservaId] = [];
