@@ -8999,9 +8999,9 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         ativo: item.ativo,
         disponibilidade: item.disponibilidade,
         previsao_devolucao: item.previsao_devolucao,
-        reserva_id_atual: item.reservaidatual,
+        reserva_id_atual: item.reserva_id_atual,
         solicitante_atual: item.nome_colaborador || item.usuario_solicitante || null,
-        data_reserva_atual: item.datareserva || null
+        data_reserva_atual: item.data_reserva || null
       }))
     });
   } catch (err) {
