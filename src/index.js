@@ -8890,27 +8890,8 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
   let conn;
 
   try {
-    const data_necessaria = String(req.query.inicio || '').trim();
-    const previsao_devolucao = String(req.query.fim || '').trim();
     const tipo_veiculo = String(req.query.tipo_veiculo || '').trim().toUpperCase();
     const usuario_logado = String(req.query.usuario_logado || '').trim().toUpperCase();
-
-    const data_necessariaMysql = datetimeLocalToMysql(data_necessaria);
-    const previsao_devolucaoMysql = datetimeLocalToMysql(previsao_devolucao);
-
-    if (!data_necessariaMysql || !previsao_devolucaoMysql) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe início e fim válidos.'
-      });
-    }
-
-    if (previsao_devolucaoMysql <= data_necessariaMysql) {
-      return res.status(400).json({
-        success: false,
-        message: 'A data final deve ser maior que a inicial.'
-      });
-    }
 
     conn = await pool.getConnection();
     await conn.query("SET time_zone = '-03:00'");
@@ -8919,21 +8900,18 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
     let filtroTipoReserva = '';
     let filtroUsuarioReserva = '';
 
-    const paramsDisponivel = [
-      previsao_devolucaoMysql,
-      data_necessariaMysql
-    ];
-
-    const paramsReserva = [
-      previsao_devolucaoMysql,
-      data_necessariaMysql
-    ];
+    const paramsDisponivel = [];
+    const paramsReserva = [];
 
     if (tipo_veiculo && tipo_veiculo !== 'SEM PREFERÊNCIA') {
-      filtroTipoDisponivel = ` AND UPPER(TRIM(COALESCE(v.tipo_veiculo, v.status_veiculo, ''))) = ? `;
+      filtroTipoDisponivel = `
+        AND UPPER(TRIM(COALESCE(v.tipo_veiculo, v.status_veiculo, ''))) = ?
+      `;
       paramsDisponivel.push(tipo_veiculo);
 
-      filtroTipoReserva = ` AND UPPER(TRIM(COALESCE(rc.tipo_veiculo, v.tipo_veiculo, v.status_veiculo, ''))) = ? `;
+      filtroTipoReserva = `
+        AND UPPER(TRIM(COALESCE(rc.tipo_veiculo, v.tipo_veiculo, v.status_veiculo, ''))) = ?
+      `;
       paramsReserva.push(tipo_veiculo);
     }
 
@@ -8976,8 +8954,6 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
             FROM SF_RESERVA_CARRO rcx
             WHERE rcx.veiculo_id = v.id
               AND REPLACE(UPPER(TRIM(COALESCE(rcx.status_solicitacao, ''))), ' ', '') NOT IN ('DEVOLVIDA', 'RECUSADA')
-              AND rcx.data_necessaria < ?
-              AND rcx.previsao_devolucao > ?
           )
           ${filtroTipoDisponivel}
 
@@ -9009,8 +8985,6 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
           ON v.id = rc.veiculo_id
         WHERE COALESCE(v.ativo, 0) = 1
           AND REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') NOT IN ('DEVOLVIDA', 'RECUSADA')
-          AND rc.data_necessaria < ?
-          AND rc.previsao_devolucao > ?
           ${filtroTipoReserva}
           ${filtroUsuarioReserva}
       ) itens
@@ -9030,8 +9004,11 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
     ];
 
     console.log('[SQL PARAMS]', queryParams);
+    console.log('[SQL]', sql);
 
     const [rows] = await conn.query(sql, queryParams);
+
+    console.log('[API /frota-carros-disponibilidade] rows:', rows);
 
     return res.json({
       success: true,
@@ -9059,10 +9036,10 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
       }))
     });
   } catch (err) {
-    console.error('Erro ao listar frota por período:', err);
+    console.error('Erro ao listar frota:', err);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao listar frota por período.',
+      message: 'Erro ao listar frota.',
       error: err.message
     });
   } finally {
