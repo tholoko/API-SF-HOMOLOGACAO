@@ -7541,17 +7541,6 @@ function normalizarTexto(valor) {
   return String(valor).trim();
 }
 
-function datetimeLocalToMysql(valor) {
-  if (!valor) return null;
-  const str = String(valor).trim().replace('T', ' ');
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(str)) {
-    return `${str}:00`;
-  }
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
-    return str;
-  }
-  return null;
-}
 
 function normalizarCategoriasCNH(valor) {
   if (Array.isArray(valor)) {
