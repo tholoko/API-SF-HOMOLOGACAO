@@ -8963,7 +8963,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
             veiculo_id,
             MAX(id) AS max_id
           FROM SF_RESERVA_CARRO
-          WHERE REPLACE(UPPER(TRIM(COALESCE(status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
+          WHERE REPLACE(UPPER(TRIM(COALESCE(status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDO_CONFIRMACAO')
           GROUP BY veiculo_id
         ) ult
           ON ult.veiculo_id = rc1.veiculo_id
