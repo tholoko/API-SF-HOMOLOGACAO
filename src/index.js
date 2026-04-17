@@ -9048,7 +9048,7 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
         rc.status_solicitacao
       FROM SF_RESERVA_CARRO rc
       WHERE rc.veiculo_id = ?
-        AND REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
+        AND REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDO_CONFIRMACAO')
       ORDER BY rc.previsao_devolucao DESC
       LIMIT 1
     `;
