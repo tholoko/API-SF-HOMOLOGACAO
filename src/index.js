@@ -9047,6 +9047,7 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
         AND UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
     `;
     const params = [veiculo_id];
+    console.log(params);
 
     const inicioMysql = inicio ? datetimeLocalToMysql(inicio) : null;
     const fimMysql = fim ? datetimeLocalToMysql(fim) : null;
