@@ -8943,7 +8943,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         CASE
           WHEN COALESCE(v.ativo, 0) <> 1 THEN 'INATIVO'
           WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'MANUTENCAO' THEN 'MANUTENCAO'
-          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') IN ('EM_USO', 'EMUSO') THEN 'EM_USO'
+          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'EM_USO' THEN 'EM_USO'
           WHEN rc.id IS NOT NULL THEN 'EM_USO'
           ELSE 'DISPONIVEL'
         END AS disponibilidade
@@ -8956,8 +8956,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
           rc1.nome_colaborador,
           rc1.data_necessaria,
           rc1.previsao_devolucao,
-          rc1.status_solicitacao,
-          rc1.tipo_veiculo
+          rc1.status_solicitacao
         FROM SF_RESERVA_CARRO rc1
         INNER JOIN (
           SELECT
@@ -8965,8 +8964,6 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
             MAX(id) AS max_id
           FROM SF_RESERVA_CARRO
           WHERE REPLACE(UPPER(TRIM(COALESCE(status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
-            AND ? > data_necessaria
-            AND ? < previsao_devolucao
           GROUP BY veiculo_id
         ) ult
           ON ult.veiculo_id = rc1.veiculo_id
@@ -8974,18 +8971,17 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
       ) rc
         ON rc.veiculo_id = v.id
       WHERE COALESCE(v.ativo, 0) = 1
-      ${filtroTipo}
       ORDER BY
         CASE
           WHEN COALESCE(v.ativo, 0) <> 1 THEN 4
           WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'MANUTENCAO' THEN 3
-          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') IN ('EM_USO', 'EMUSO') THEN 2
+          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'EM_USO' THEN 2
           WHEN rc.id IS NOT NULL THEN 2
           ELSE 1
         END,
         v.modelo ASC,
         v.placa ASC
-    `, params);
+    `);
 
     console.log(rows);
 
