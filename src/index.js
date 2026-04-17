@@ -8992,10 +8992,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
 
     const [rows] = await conn.query(sqlFrota, paramsFrota);
 
-    const paramsSolicitacoes = [
-      previsao_devolucaoMysql,
-      data_necessariaMysql
-    ];
+    const paramsSolicitacoes = [];
 
     let filtroTipoSolicitacoes = '';
     if (tipo_veiculo && tipo_veiculo !== 'SEM PREFERÊNCIA') {
@@ -9019,15 +9016,57 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
       FROM SF_RESERVA_CARRO rc
       WHERE REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') NOT IN ('DEVOLVIDA', 'RECUSADA')
         AND rc.veiculo_id IS NULL
+        ${filtroTipoSolicitacoes}
       ORDER BY
         rc.data_necessaria ASC,
         rc.id ASC
     `;
 
-    const [rowsSolicitacoesSemVeiculo] = await conn.query(sqlSolicitacoesSemVeiculo, paramsSolicitacoes);
+    const [rowsSolicitacoesSemVeiculo] = await conn.query(
+      sqlSolicitacoesSemVeiculo,
+      paramsSolicitacoes
+    );
+
+    let destinosPorReserva = {};
+
+    if (rowsSolicitacoesSemVeiculo.length) {
+      const idsSolicitacoes = rowsSolicitacoesSemVeiculo.map((item) => item.id);
+
+      const placeholders = idsSolicitacoes.map(() => '?').join(',');
+
+      const sqlDestinos = `
+        SELECT
+          rcd.reserva_carro_id,
+          lt.id AS destino_id,
+          lt.nome AS destino_nome
+        FROM SF_RESERVA_CARRO_DESTINOS rcd
+        INNER JOIN SF_LOCAL_TRABALHO lt
+          ON lt.id = rcd.local_trabalho_id
+        WHERE rcd.reserva_carro_id IN (${placeholders})
+        ORDER BY rcd.reserva_carro_id ASC, lt.nome ASC
+      `;
+
+      const [rowsDestinos] = await conn.query(sqlDestinos, idsSolicitacoes);
+
+      destinosPorReserva = rowsDestinos.reduce((acc, item) => {
+        const reservaId = item.reserva_carro_id;
+
+        if (!acc[reservaId]) {
+          acc[reservaId] = [];
+        }
+
+        acc[reservaId].push({
+          id: item.destino_id,
+          nome: item.destino_nome
+        });
+
+        return acc;
+      }, {});
+    }
 
     console.log('[FROTA] rows:', rows);
     console.log('[SOLICITACOES_SEM_VEICULO] rows:', rowsSolicitacoesSemVeiculo);
+    console.log('[DESTINOS_SOLICITACOES_SEM_VEICULO]', destinosPorReserva);
 
     return res.json({
       success: true,
@@ -9062,7 +9101,8 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         data_necessaria: item.data_necessaria || null,
         previsao_devolucao: item.previsao_devolucao || null,
         observacoes: item.observacoes || null,
-        data_solicitacao: item.data_solicitacao || null
+        data_solicitacao: item.data_solicitacao || null,
+        destinos: destinosPorReserva[item.id] || []
       }))
     });
   } catch (err) {
