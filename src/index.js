@@ -9018,12 +9018,21 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
 
 app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
   let conn;
+
   try {
     const veiculo_id = Number(req.params.id);
     const inicio = String(req.query.inicio || '').trim();
     const fim = String(req.query.fim || '').trim();
 
+    console.log('\n==============================');
+    console.log('[RESERVA ATIVA] Início da requisição');
+    console.log('[RESERVA ATIVA] req.params.id:', req.params.id);
+    console.log('[RESERVA ATIVA] veiculo_id:', veiculo_id);
+    console.log('[RESERVA ATIVA] inicio:', inicio);
+    console.log('[RESERVA ATIVA] fim:', fim);
+
     if (!veiculo_id) {
+      console.log('[RESERVA ATIVA] ID inválido, retornando 400');
       return res.status(400).json({
         success: false,
         message: 'Informe um id de veículo válido.'
@@ -9032,6 +9041,7 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
 
     conn = await pool.getConnection();
     await conn.query("SET time_zone = '-03:00'");
+    console.log('[RESERVA ATIVA] Conexão obtida e timezone configurado');
 
     let sql = `
       SELECT
@@ -9044,34 +9054,49 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
         rc.status_solicitacao
       FROM SF_RESERVA_CARRO rc
       WHERE rc.id = ?
-        AND UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
+        AND REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDOCONFIRMACAO')
     `;
     const params = [veiculo_id];
-    console.log(params);
 
     const inicioMysql = inicio ? datetimeLocalToMysql(inicio) : null;
     const fimMysql = fim ? datetimeLocalToMysql(fim) : null;
 
+    console.log('[RESERVA ATIVA] inicioMysql:', inicioMysql);
+    console.log('[RESERVA ATIVA] fimMysql:', fimMysql);
+
     if (inicioMysql && fimMysql) {
       sql += ` AND ? > rc.data_necessaria AND ? < rc.previsao_devolucao `;
       params.push(fimMysql, inicioMysql);
+      console.log('[RESERVA ATIVA] Aplicando filtro por período');
     } else {
       sql += ` AND rc.previsao_devolucao >= NOW() `;
+      console.log('[RESERVA ATIVA] Sem período informado, usando previsao_devolucao >= NOW()');
     }
 
     sql += ` ORDER BY rc.previsao_devolucao ASC LIMIT 1 `;
 
-    const rowsReserva = await conn.query(sql, params);
+    console.log('\n[RESERVA ATIVA] SQL da reserva:');
+    console.log(sql);
+    console.log('[RESERVA ATIVA] Params da reserva:', params);
+
+    const [rowsReserva] = await conn.query(sql, params);
+
+    console.log('[RESERVA ATIVA] rowsReserva bruto:', rowsReserva);
+    console.log('[RESERVA ATIVA] Quantidade de reservas encontradas:', rowsReserva?.length || 0);
+
     const reserva = rowsReserva?.[0];
 
+    console.log('[RESERVA ATIVA] reserva selecionada:', reserva);
+
     if (!reserva) {
+      console.log('[RESERVA ATIVA] Nenhuma reserva encontrada, retornando 404');
       return res.status(404).json({
         success: false,
         message: 'Nenhuma reserva ativa encontrada para este veículo.'
       });
     }
 
-    const [destinos] = await conn.query(`
+    const sqlDestinos = `
       SELECT
         lt.id,
         lt.nome
@@ -9080,9 +9105,17 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
         ON lt.id = rcd.local_trabalho_id
       WHERE rcd.reserva_id = ?
       ORDER BY lt.nome
-    `, [reserva.id]);
+    `;
 
-    return res.json({
+    console.log('\n[RESERVA ATIVA] SQL dos destinos:');
+    console.log(sqlDestinos);
+    console.log('[RESERVA ATIVA] Params dos destinos:', [reserva.id]);
+
+    const [destinos] = await conn.query(sqlDestinos, [reserva.id]);
+
+    console.log('[RESERVA ATIVA] destinos encontrados:', destinos);
+
+    const responseData = {
       success: true,
       data: {
         reserva_id: reserva.id,
@@ -9094,16 +9127,27 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
         status_solicitacao: reserva.status_solicitacao,
         destinos
       }
-    });
+    };
+
+    console.log('\n[RESERVA ATIVA] Resposta final:');
+    console.log(JSON.stringify(responseData, null, 2));
+    console.log('==============================\n');
+
+    return res.json(responseData);
   } catch (err) {
-    console.error('Erro ao buscar reserva ativa do veículo:', err);
+    console.error('\n[RESERVA ATIVA] Erro ao buscar reserva ativa do veículo:');
+    console.error(err);
+
     return res.status(500).json({
       success: false,
       message: 'Erro ao buscar reserva ativa do veículo.',
       error: err.message
     });
   } finally {
-    if (conn) conn.release();
+    if (conn) {
+      conn.release();
+      console.log('[RESERVA ATIVA] Conexão liberada');
+    }
   }
 });
 
