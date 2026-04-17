@@ -8888,10 +8888,12 @@ app.delete('/api/reservas-carro/:id', async (req, res) => {
 
 app.get('/api/frota-carros-disponibilidade', async (req, res) => {
   let conn;
+
   try {
     const data_necessaria = String(req.query.inicio || '').trim();
     const previsao_devolucao = String(req.query.fim || '').trim();
     const tipo_veiculo = String(req.query.tipo_veiculo || '').trim().toUpperCase();
+    const usuario_logado = String(req.query.usuario_logado || '').trim().toUpperCase();
 
     const data_necessariaMysql = datetimeLocalToMysql(data_necessaria);
     const previsao_devolucaoMysql = datetimeLocalToMysql(previsao_devolucao);
@@ -8913,82 +8915,125 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
     conn = await pool.getConnection();
     await conn.query("SET time_zone = '-03:00'");
 
-    const params = [
+    const params = [];
+    const whereTipoDisponivel = [];
+    const whereTipoReserva = [];
+
+    if (tipo_veiculo && tipo_veiculo !== 'SEM PREFERÊNCIA') {
+      whereTipoDisponivel.push(`UPPER(TRIM(COALESCE(v.tipo_veiculo, v.status_veiculo, ''))) = ?`);
+      params.push(tipo_veiculo);
+
+      whereTipoReserva.push(`UPPER(TRIM(COALESCE(rc.tipo_veiculo, v.tipo_veiculo, v.status_veiculo, ''))) = ?`);
+      params.push(tipo_veiculo);
+    }
+
+    const whereUsuarioReserva = [];
+    if (usuario_logado) {
+      whereUsuarioReserva.push(`
+        UPPER(TRIM(COALESCE(rc.nome_colaborador, rc.usuario_solicitante, ''))) <> ?
+      `);
+      params.push(usuario_logado);
+    }
+
+    const sql = `
+      SELECT *
+      FROM (
+        SELECT
+          'VEICULO_DISPONIVEL' AS tipo_item,
+          v.id AS id,
+          v.id AS veiculo_id,
+          NULL AS reserva_id_atual,
+          v.placa,
+          v.modelo,
+          v.marca,
+          v.cor,
+          v.ano,
+          v.km_atual,
+          v.status_veiculo,
+          v.ativo,
+          COALESCE(v.tipo_veiculo, '') AS tipo_veiculo,
+          'DISPONIVEL' AS disponibilidade,
+          NULL AS status_solicitacao_atual,
+          NULL AS solicitante_atual,
+          NULL AS usuario_solicitante,
+          NULL AS nome_colaborador,
+          NULL AS data_reserva_atual,
+          NULL AS previsao_devolucao
+        FROM SF_VEICULOS v
+        WHERE COALESCE(v.ativo, 0) = 1
+          AND REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') NOT IN ('MANUTENCAO', 'EM_USO')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM SF_RESERVA_CARRO rcx
+            WHERE rcx.veiculo_id = v.id
+              AND REPLACE(UPPER(TRIM(COALESCE(rcx.status_solicitacao, ''))), ' ', '') NOT IN ('DEVOLVIDA', 'RECUSADA')
+              AND rcx.data_necessaria < ?
+              AND rcx.previsao_devolucao > ?
+          )
+          ${whereTipoDisponivel.length ? `AND ${whereTipoDisponivel.join(' AND ')}` : ''}
+
+        UNION ALL
+
+        SELECT
+          'RESERVA_ATIVA' AS tipo_item,
+          CONCAT('reserva_', rc.id) AS id,
+          v.id AS veiculo_id,
+          rc.id AS reserva_id_atual,
+          v.placa,
+          v.modelo,
+          v.marca,
+          v.cor,
+          v.ano,
+          v.km_atual,
+          v.status_veiculo,
+          v.ativo,
+          COALESCE(rc.tipo_veiculo, v.tipo_veiculo, '') AS tipo_veiculo,
+          'EM_USO' AS disponibilidade,
+          rc.status_solicitacao AS status_solicitacao_atual,
+          COALESCE(rc.nome_colaborador, rc.usuario_solicitante) AS solicitante_atual,
+          rc.usuario_solicitante,
+          rc.nome_colaborador,
+          rc.data_necessaria AS data_reserva_atual,
+          rc.previsao_devolucao
+        FROM SF_RESERVA_CARRO rc
+        INNER JOIN SF_VEICULOS v
+          ON v.id = rc.veiculo_id
+        WHERE COALESCE(v.ativo, 0) = 1
+          AND REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') NOT IN ('DEVOLVIDA', 'RECUSADA')
+          AND rc.data_necessaria < ?
+          AND rc.previsao_devolucao > ?
+          ${whereTipoReserva.length ? `AND ${whereTipoReserva.join(' AND ')}` : ''}
+          ${whereUsuarioReserva.length ? `AND ${whereUsuarioReserva.join(' AND ')}` : ''}
+      ) itens
+      ORDER BY
+        CASE
+          WHEN itens.tipo_item = 'RESERVA_ATIVA' THEN 1
+          ELSE 2
+        END,
+        itens.data_reserva_atual ASC,
+        itens.modelo ASC,
+        itens.placa ASC
+    `;
+
+    const queryParams = [
+      previsao_devolucaoMysql,
+      data_necessariaMysql,
+      ...params,
       previsao_devolucaoMysql,
       data_necessariaMysql
     ];
 
-    let filtroTipo = '';
-    if (tipo_veiculo && tipo_veiculo !== 'SEM PREFERÊNCIA') {
-      filtroTipo = ` AND UPPER(TRIM(COALESCE(rc.tipo_veiculo, v.status_veiculo, ''))) = ? `;
-      params.push(tipo_veiculo);
-    }
+    const [rows] = await conn.query(sql, queryParams);
 
-    const [rows] = await conn.query(`
-      SELECT
-        v.id,
-        v.placa,
-        v.modelo,
-        v.marca,
-        v.cor,
-        v.ano,
-        v.km_atual,
-        v.status_veiculo,
-        v.ativo,
-        rc.id AS reserva_id_atual,
-        rc.usuario_solicitante,
-        rc.nome_colaborador,
-        rc.data_necessaria AS data_reserva,
-        rc.previsao_devolucao,
-        CASE
-          WHEN COALESCE(v.ativo, 0) <> 1 THEN 'INATIVO'
-          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'MANUTENCAO' THEN 'MANUTENCAO'
-          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'EM_USO' THEN 'EM_USO'
-          WHEN rc.id IS NOT NULL THEN 'EM_USO'
-          ELSE 'DISPONIVEL'
-        END AS disponibilidade
-      FROM SF_VEICULOS v
-      LEFT JOIN (
-        SELECT
-          rc1.id,
-          rc1.veiculo_id,
-          rc1.usuario_solicitante,
-          rc1.nome_colaborador,
-          rc1.data_necessaria,
-          rc1.previsao_devolucao,
-          rc1.status_solicitacao
-        FROM SF_RESERVA_CARRO rc1
-        INNER JOIN (
-          SELECT
-            veiculo_id,
-            MAX(id) AS max_id
-          FROM SF_RESERVA_CARRO
-          WHERE REPLACE(UPPER(TRIM(COALESCE(status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDO_CONFIRMACAO')
-          GROUP BY veiculo_id
-        ) ult
-          ON ult.veiculo_id = rc1.veiculo_id
-        AND ult.max_id = rc1.id
-      ) rc
-        ON rc.veiculo_id = v.id
-      WHERE COALESCE(v.ativo, 0) = 1
-      ORDER BY
-        CASE
-          WHEN COALESCE(v.ativo, 0) <> 1 THEN 4
-          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'MANUTENCAO' THEN 3
-          WHEN REPLACE(UPPER(TRIM(COALESCE(v.status_veiculo, ''))), ' ', '') = 'EM_USO' THEN 2
-          WHEN rc.id IS NOT NULL THEN 2
-          ELSE 1
-        END,
-        v.modelo ASC,
-        v.placa ASC
-    `);
-
-    console.log(rows);
+    console.log('[API /frota-carros-disponibilidade] rows:', rows);
 
     return res.json({
       success: true,
       items: rows.map((item) => ({
+        tipo_item: item.tipo_item,
         id: item.id,
+        veiculo_id: item.veiculo_id,
+        reserva_id_atual: item.reserva_id_atual,
         placa: item.placa,
         modelo: item.modelo,
         marca: item.marca,
@@ -8997,11 +9042,14 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         km_atual: item.km_atual,
         status_veiculo: item.status_veiculo,
         ativo: item.ativo,
+        tipo_veiculo: item.tipo_veiculo,
         disponibilidade: item.disponibilidade,
-        previsao_devolucao: item.previsao_devolucao,
-        reserva_id_atual: item.reserva_id_atual,
-        solicitante_atual: item.nome_colaborador || item.usuario_solicitante || null,
-        data_reserva_atual: item.data_reserva || null
+        status_solicitacao_atual: item.status_solicitacao_atual,
+        solicitante_atual: item.solicitante_atual,
+        usuario_solicitante: item.usuario_solicitante,
+        nome_colaborador: item.nome_colaborador,
+        data_reserva_atual: item.data_reserva_atual,
+        previsao_devolucao: item.previsao_devolucao
       }))
     });
   } catch (err) {
