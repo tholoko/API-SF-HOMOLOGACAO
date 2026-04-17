@@ -9064,9 +9064,6 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
       }, {});
     }
 
-    console.log('[FROTA] rows:', rows);
-    console.log('[SOLICITACOES_SEM_VEICULO] rows:', rowsSolicitacoesSemVeiculo);
-    console.log('[DESTINOS_SOLICITACOES_SEM_VEICULO]', destinosPorReserva);
 
     return res.json({
       success: true,
@@ -9122,10 +9119,6 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
   try {
     const veiculo_id = Number(req.params.id);
 
-    console.log('\n==============================');
-    console.log('[RESERVA ATIVA] Início da requisição');
-    console.log('[RESERVA ATIVA] req.params.id:', req.params.id);
-    console.log('[RESERVA ATIVA] veiculo_id:', veiculo_id);
 
     if (!veiculo_id) {
       return res.status(400).json({
@@ -9136,7 +9129,6 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
 
     conn = await pool.getConnection();
     await conn.query("SET time_zone = '-03:00'");
-    console.log('[RESERVA ATIVA] Conexão obtida e timezone configurado');
 
     const sql = `
       SELECT
@@ -9156,18 +9148,12 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
 
     const params = [veiculo_id];
 
-    console.log('\n[RESERVA ATIVA] SQL da reserva:');
-    console.log(sql);
-    console.log('[RESERVA ATIVA] Params da reserva:', params);
 
     const [rowsReserva] = await conn.query(sql, params);
 
-    console.log('[RESERVA ATIVA] rowsReserva bruto:', rowsReserva);
-    console.log('[RESERVA ATIVA] Quantidade de reservas encontradas:', rowsReserva?.length || 0);
 
     const reserva = rowsReserva?.[0];
 
-    console.log('[RESERVA ATIVA] reserva selecionada:', reserva);
 
     if (!reserva) {
       return res.status(404).json({
@@ -9187,13 +9173,9 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
       ORDER BY lt.nome
     `;
 
-    console.log('\n[RESERVA ATIVA] SQL dos destinos:');
-    console.log(sqlDestinos);
-    console.log('[RESERVA ATIVA] Params dos destinos:', [reserva.id]);
 
     const [destinos] = await conn.query(sqlDestinos, [reserva.id]);
 
-    console.log('[RESERVA ATIVA] destinos encontrados:', destinos);
 
     const responseData = {
       success: true,
@@ -9209,9 +9191,6 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
       }
     };
 
-    console.log('\n[RESERVA ATIVA] Resposta final:');
-    console.log(JSON.stringify(responseData, null, 2));
-    console.log('==============================\n');
 
     return res.json(responseData);
   } catch (err) {
@@ -9224,7 +9203,6 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
   } finally {
     if (conn) {
       conn.release();
-      console.log('[RESERVA ATIVA] Conexão liberada');
     }
   }
 });
@@ -11355,7 +11333,6 @@ app.post('/api/organograma-setores', async (req, res) => {
     const descricao = String(req.body?.descricao ?? '').trim() || null;
     const status = Number(req.body?.status ?? 1) ? 1 : 0;
 
-    console.log(nome);
 
     if (!nome) {
       return res.status(400).json({
@@ -11371,7 +11348,6 @@ app.post('/api/organograma-setores', async (req, res) => {
       LIMIT 1
     `, [nome]);
 
-    console.log(duplicado.length);
 
     if (duplicado.length) {
       return res.status(409).json({
@@ -12033,7 +12009,6 @@ async function obterOuCriarPorNome(conn, tabela, nome) {
   );
 
   if (rows.length) {
-    console.log(`[IMPORTAÇÃO] Registro já existente em ${tabela}:`, rows[0]);
     return rows[0];
   }
 
@@ -12043,7 +12018,6 @@ async function obterOuCriarPorNome(conn, tabela, nome) {
   );
 
   const novo = { ID: result.insertId, NOME: valor };
-  console.log(`[IMPORTAÇÃO] Registro criado em ${tabela}:`, novo);
   return novo;
 }
 
