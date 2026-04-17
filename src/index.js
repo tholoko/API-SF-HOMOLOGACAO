@@ -7536,6 +7536,60 @@ app.post('/api/reservas-carro', async (req, res) => {
   }
 });
 
+function normalizarTexto(valor) {
+  if (valor === undefined || valor === null) return '';
+  return String(valor).trim();
+}
+
+function datetimeLocalToMysql(valor) {
+  if (!valor) return null;
+  const str = String(valor).trim().replace('T', ' ');
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(str)) {
+    return `${str}:00`;
+  }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
+    return str;
+  }
+  return null;
+}
+
+function normalizarCategoriasCNH(valor) {
+  if (Array.isArray(valor)) {
+    return valor
+      .map(v => normalizarTexto(v).toUpperCase())
+      .filter(Boolean)
+      .join(',');
+  }
+
+  return normalizarTexto(valor)
+    .split(',')
+    .map(v => normalizarTexto(v).toUpperCase())
+    .filter(Boolean)
+    .join(',');
+}
+
+function normalizarDestinosFormulario(valor) {
+  if (Array.isArray(valor)) {
+    return valor.map(v => Number(v)).filter(Boolean);
+  }
+
+  if (typeof valor === 'string' && valor.trim()) {
+    return valor
+      .split(',')
+      .map(v => Number(v.trim()))
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function bufferParaDataUrl(file) {
+  if (!file?.buffer || !file?.mimetype) return null;
+  const base64 = file.buffer.toString('base64');
+  return `data:${file.mimetype};base64,${base64}`;
+}
+
+
 app.post('/api/reserva-carro-formulario', uploadMemoria.single('foto_cnh'), async (req, res) => {
   let conn;
 
