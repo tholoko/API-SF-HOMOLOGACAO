@@ -7536,6 +7536,195 @@ app.post('/api/reservas-carro', async (req, res) => {
   }
 });
 
+app.post('/api/reserva-carro-formulario', uploadMemoria.single('foto_cnh'), async (req, res) => {
+  let conn;
+
+  try {
+    const {
+      nome_completo,
+      tipo_veiculo,
+      data_necessaria,
+      previsao_devolucao,
+      observacoes,
+      urgencia,
+      usuario_solicitante,
+      nome_colaborador,
+      matricula_colaborador,
+      cpf,
+      cpf_colaborador,
+      numero_cnh,
+      cnh_colaborador,
+      categoria_cnh,
+      validade_cnh,
+      origem_solicitacao,
+      email,
+      telefone
+    } = req.body || {};
+
+    const destinosRaw = req.body?.['destinos[]'] ?? req.body?.destinos;
+    const destinosNormalizados = normalizarDestinosFormulario(destinosRaw);
+    const categoriasNormalizadas = normalizarCategoriasCNH(categoria_cnh);
+
+    if (!tipo_veiculo || !data_necessaria || !previsao_devolucao || !urgencia || !usuario_solicitante) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe tipo_veiculo, data_necessaria, previsao_devolucao, urgencia e usuario_solicitante.'
+      });
+    }
+
+    if (!normalizarTexto(nome_completo) && !normalizarTexto(nome_colaborador)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o nome do solicitante.'
+      });
+    }
+
+    if (!destinosNormalizados.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione pelo menos um destino.'
+      });
+    }
+
+    if (!categoriasNormalizadas) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione ao menos uma categoria da CNH.'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'A foto da CNH é obrigatória.'
+      });
+    }
+
+    const fotoAceiteTermo = bufferParaDataUrl(req.file);
+
+    if (!fotoAceiteTermo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Não foi possível processar a foto enviada.'
+      });
+    }
+
+    const dataNecessariaMysql = datetimeLocalToMysql(data_necessaria);
+    const previsaoDevolucaoMysql = datetimeLocalToMysql(previsao_devolucao);
+
+    if (!dataNecessariaMysql || !previsaoDevolucaoMysql) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data necessária ou previsão de devolução inválida.'
+      });
+    }
+
+    if (previsaoDevolucaoMysql <= dataNecessariaMysql) {
+      return res.status(400).json({
+        success: false,
+        message: 'A previsão de devolução deve ser maior que a data necessária.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.query("SET time_zone = '-03:00'");
+    await conn.beginTransaction();
+
+    const usuarioSolicitanteNormalizado = normalizarTexto(usuario_solicitante);
+    const nomeCompletoNormalizado = normalizarTexto(nome_completo);
+    const nomeColaboradorNormalizado = normalizarTexto(nome_colaborador || nome_completo);
+
+    const conflito = await validarConflitoReservaCarro(conn, {
+      usuarioSolicitante: usuarioSolicitanteNormalizado,
+      dataNecessariaMysql,
+      previsaoDevolucaoMysql
+    });
+
+    if (conflito) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Já existe uma solicitação ativa para este usuário no mesmo período. Reserva conflitante #${conflito.id}.`
+      });
+    }
+
+    const [insertReserva] = await conn.query(`
+      INSERT INTO SF_RESERVA_CARRO (
+        tipo_veiculo,
+        data_necessaria,
+        previsao_devolucao,
+        urgencia,
+        observacoes,
+        usuario_solicitante,
+        termo_aceito,
+        data_aceite_termo,
+        foto_aceite_termo,
+        termo_versao,
+        nome_colaborador,
+        matricula_colaborador,
+        cpf_colaborador,
+        cnh_colaborador,
+        categoria_cnh,
+        validade_cnh,
+        origem_solicitacao,
+        email,
+        telefone
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      normalizarTexto(tipo_veiculo).toUpperCase(),
+      dataNecessariaMysql,
+      previsaoDevolucaoMysql,
+      normalizarTexto(urgencia).toUpperCase(),
+      normalizarTexto(observacoes) || null,
+      usuarioSolicitanteNormalizado,
+      1,
+      fotoAceiteTermo,
+      '2026-04',
+      nomeColaboradorNormalizado || nomeCompletoNormalizado || null,
+      normalizarTexto(matricula_colaborador) || null,
+      normalizarTexto(cpf_colaborador || cpf) || null,
+      normalizarTexto(cnh_colaborador || numero_cnh) || null,
+      categoriasNormalizadas,
+      normalizarTexto(validade_cnh) || null,
+      normalizarTexto(origem_solicitacao) || 'FORMULARIO',
+      normalizarTexto(email) || null,
+      normalizarTexto(telefone) || null
+    ]);
+
+    const reservaId = Number(insertReserva.insertId);
+
+    for (const idDestino of destinosNormalizados) {
+      await conn.query(`
+        INSERT INTO SF_RESERVA_CARRO_DESTINO (
+          reserva_id,
+          local_trabalho_id
+        ) VALUES (?, ?)
+      `, [reservaId, idDestino]);
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Solicitação de reserva de carro salva com sucesso.',
+      reservaId
+    });
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+
+    console.error('Erro ao salvar reserva de carro via formulário:', err);
+
+    return res.status(500).json({
+      success: false,
+      message: err?.message || 'Erro ao salvar reserva de carro.'
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get('/api/reservas-carro', async (req, res) => {
   let conn;
 
