@@ -8915,24 +8915,33 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
     conn = await pool.getConnection();
     await conn.query("SET time_zone = '-03:00'");
 
-    const params = [];
-    const whereTipoDisponivel = [];
-    const whereTipoReserva = [];
+    let filtroTipoDisponivel = '';
+    let filtroTipoReserva = '';
+    let filtroUsuarioReserva = '';
+
+    const paramsDisponivel = [
+      previsao_devolucaoMysql,
+      data_necessariaMysql
+    ];
+
+    const paramsReserva = [
+      previsao_devolucaoMysql,
+      data_necessariaMysql
+    ];
 
     if (tipo_veiculo && tipo_veiculo !== 'SEM PREFERÊNCIA') {
-      whereTipoDisponivel.push(`UPPER(TRIM(COALESCE(v.tipo_veiculo, v.status_veiculo, ''))) = ?`);
-      params.push(tipo_veiculo);
+      filtroTipoDisponivel = ` AND UPPER(TRIM(COALESCE(v.tipo_veiculo, v.status_veiculo, ''))) = ? `;
+      paramsDisponivel.push(tipo_veiculo);
 
-      whereTipoReserva.push(`UPPER(TRIM(COALESCE(rc.tipo_veiculo, v.tipo_veiculo, v.status_veiculo, ''))) = ?`);
-      params.push(tipo_veiculo);
+      filtroTipoReserva = ` AND UPPER(TRIM(COALESCE(rc.tipo_veiculo, v.tipo_veiculo, v.status_veiculo, ''))) = ? `;
+      paramsReserva.push(tipo_veiculo);
     }
 
-    const whereUsuarioReserva = [];
     if (usuario_logado) {
-      whereUsuarioReserva.push(`
-        UPPER(TRIM(COALESCE(rc.nome_colaborador, rc.usuario_solicitante, ''))) <> ?
-      `);
-      params.push(usuario_logado);
+      filtroUsuarioReserva = `
+        AND UPPER(TRIM(COALESCE(rc.nome_colaborador, rc.usuario_solicitante, ''))) <> ?
+      `;
+      paramsReserva.push(usuario_logado);
     }
 
     const sql = `
@@ -8940,7 +8949,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
       FROM (
         SELECT
           'VEICULO_DISPONIVEL' AS tipo_item,
-          v.id AS id,
+          CAST(v.id AS CHAR) AS id,
           v.id AS veiculo_id,
           NULL AS reserva_id_atual,
           v.placa,
@@ -8970,7 +8979,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
               AND rcx.data_necessaria < ?
               AND rcx.previsao_devolucao > ?
           )
-          ${whereTipoDisponivel.length ? `AND ${whereTipoDisponivel.join(' AND ')}` : ''}
+          ${filtroTipoDisponivel}
 
         UNION ALL
 
@@ -9002,8 +9011,8 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
           AND REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') NOT IN ('DEVOLVIDA', 'RECUSADA')
           AND rc.data_necessaria < ?
           AND rc.previsao_devolucao > ?
-          ${whereTipoReserva.length ? `AND ${whereTipoReserva.join(' AND ')}` : ''}
-          ${whereUsuarioReserva.length ? `AND ${whereUsuarioReserva.join(' AND ')}` : ''}
+          ${filtroTipoReserva}
+          ${filtroUsuarioReserva}
       ) itens
       ORDER BY
         CASE
@@ -9016,16 +9025,13 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
     `;
 
     const queryParams = [
-      previsao_devolucaoMysql,
-      data_necessariaMysql,
-      ...params,
-      previsao_devolucaoMysql,
-      data_necessariaMysql
+      ...paramsDisponivel,
+      ...paramsReserva
     ];
 
-    const [rows] = await conn.query(sql, queryParams);
+    console.log('[SQL PARAMS]', queryParams);
 
-    console.log('[API /frota-carros-disponibilidade] rows:', rows);
+    const [rows] = await conn.query(sql, queryParams);
 
     return res.json({
       success: true,
