@@ -8924,7 +8924,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
       params.push(tipo_veiculo);
     }
 
-    const rows = await conn.query(`
+    const [rows] = await conn.query(`
       SELECT
         v.id,
         v.placa,
@@ -9050,7 +9050,7 @@ app.get('/api/frota-carros/:id/reserva-ativa', async (req, res) => {
       });
     }
 
-    const destinos = await conn.query(`
+    const [destinos] = await conn.query(`
       SELECT
         lt.id,
         lt.nome
