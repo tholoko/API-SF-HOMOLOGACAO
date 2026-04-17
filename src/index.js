@@ -8948,7 +8948,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         END AS disponibilidade
       FROM SF_VEICULOS v
       LEFT JOIN SF_RESERVA_CARRO rc
-        ON rc.veiculoid = v.id
+        ON rc.veiculo_id = v.id
        AND UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))) IN ('APROVADA', 'AGUARDANDO CONFIRMACAO')
        AND ? > rc.data_necessaria
        AND ? < rc.previsao_devolucao
