@@ -8943,7 +8943,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         CASE
           WHEN COALESCE(v.ativo, 0) <> 1 THEN 'INATIVO'
           WHEN UPPER(TRIM(COALESCE(v.status_veiculo, ''))) = 'MANUTENCAO' THEN 'MANUTENCAO'
-          WHEN rc.id IS NOT NULL THEN 'EM USO'
+          WHEN rc.id IS NOT NULL THEN 'EM_USO'
           ELSE 'DISPONIVEL'
         END AS disponibilidade
       FROM SF_VEICULOS v
