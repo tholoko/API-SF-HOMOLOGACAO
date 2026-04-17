@@ -7558,7 +7558,10 @@ app.post('/api/reserva-carro-formulario', uploadMemoria.single('foto_cnh'), asyn
       validade_cnh,
       origem_solicitacao,
       email,
-      telefone
+      telefone,
+      termo_aceito,
+      foto_aceite_termo,
+      termo_versao
     } = req.body || {};
 
     const destinosRaw = req.body?.['destinos[]'] ?? req.body?.destinos;
@@ -7600,12 +7603,17 @@ app.post('/api/reserva-carro-formulario', uploadMemoria.single('foto_cnh'), asyn
       });
     }
 
-    const fotoAceiteTermo = bufferParaDataUrl(req.file);
-
-    if (!fotoAceiteTermo) {
+    if (Number(termo_aceito) !== 1) {
       return res.status(400).json({
         success: false,
-        message: 'Não foi possível processar a foto enviada.'
+        message: 'É obrigatório aceitar o termo de responsabilidade.'
+      });
+    }
+
+    if (!normalizarTexto(foto_aceite_termo)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A foto do aceite do termo é obrigatória.'
       });
     }
 
@@ -7678,8 +7686,8 @@ app.post('/api/reserva-carro-formulario', uploadMemoria.single('foto_cnh'), asyn
       normalizarTexto(observacoes) || null,
       usuarioSolicitanteNormalizado,
       1,
-      fotoAceiteTermo,
-      '2026-04',
+      normalizarTexto(foto_aceite_termo),
+      normalizarTexto(termo_versao) || '2026-04',
       nomeColaboradorNormalizado || nomeCompletoNormalizado || null,
       normalizarTexto(matricula_colaborador) || null,
       normalizarTexto(cpf_colaborador || cpf) || null,
