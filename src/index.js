@@ -9018,7 +9018,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         rc.data_necessaria,
         rc.previsao_devolucao,
         rc.observacoes,
-        rc.created_at
+        rc.data_solicitacao
       FROM SF_RESERVA_CARRO rc
       WHERE REPLACE(UPPER(TRIM(COALESCE(rc.status_solicitacao, ''))), ' ', '') IN ('APROVADA', 'AGUARDANDO_CONFIRMACAO')
         AND rc.veiculo_id IS NULL
@@ -9068,7 +9068,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
         data_necessaria: item.data_necessaria || null,
         previsao_devolucao: item.previsao_devolucao || null,
         observacoes: item.observacoes || null,
-        created_at: item.created_at || null
+        data_solicitacao: item.data_solicitacao || null
       }))
     });
   } catch (err) {
