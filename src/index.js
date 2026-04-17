@@ -9039,7 +9039,7 @@ app.get('/api/frota-carros-disponibilidade', async (req, res) => {
           rcd.reserva_carro_id,
           lt.id AS destino_id,
           lt.nome AS destino_nome
-        FROM SF_RESERVA_CARRO_DESTINOS rcd
+        FROM SF_RESERVA_CARRO_DESTINO rcd
         INNER JOIN SF_LOCAL_TRABALHO lt
           ON lt.id = rcd.local_trabalho_id
         WHERE rcd.reserva_carro_id IN (${placeholders})
