@@ -8955,7 +8955,6 @@ app.post('/api/reservas-carro-formulario/:id/aprovar', async (req, res) => {
       });
     }
 
-    console.log(reserva.status_solicitacao);
 
     if (normalizarStatusReserva(reserva.status_solicitacao) !== 'PENDENTE') {
       await conn.rollback();
