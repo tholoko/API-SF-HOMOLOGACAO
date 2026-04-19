@@ -12533,7 +12533,6 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
   let conn;
 
   try {
-
     if (!req.file?.buffer) {
       return res.status(400).json({
         success: false,
@@ -12542,7 +12541,6 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
     }
 
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-
     const primeiraAba = wb.SheetNames[0];
     const ws = wb.Sheets[primeiraAba];
 
@@ -12554,7 +12552,6 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
     }
 
     const linhas = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
 
     if (!linhas.length) {
       return res.status(400).json({
@@ -12573,14 +12570,47 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
     let inseridos = 0;
     let ignorados = 0;
 
+    const gerarEmailTemporario = async (conn, cpf) => {
+      const baseEmail = `${cpf}@temp.local`;
+
+      const [emailBaseExistente] = await conn.query(
+        `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
+        [baseEmail]
+      );
+
+      if (emailBaseExistente.length === 0) {
+        return baseEmail;
+      }
+
+      let contador = 1;
+      let emailAlternativo = `${cpf}.${contador}@temp.local`;
+
+      while (true) {
+        const [emailExistente] = await conn.query(
+          `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
+          [emailAlternativo]
+        );
+
+        if (emailExistente.length === 0) {
+          return emailAlternativo;
+        }
+
+        contador++;
+        emailAlternativo = `${cpf}.${contador}@temp.local`;
+      }
+    };
+
     for (let i = 0; i < linhas.length; i++) {
       const linha = linhas[i];
       const numeroLinha = i + 2;
 
-
       try {
         const nome = titleCaseNome(linha['NOME']);
         const cpf = somenteNumerosImportar(linha['CPF']);
+        const emailInformado = texto(linha['EMAIL'] || linha['E-MAIL']).toLowerCase();
+        const telefone = somenteNumerosImportar(
+          linha['TELEFONE'] || linha['CELULAR'] || linha['TELEFONE 1']
+        );
         const dataNascimento = excelDateToISO(linha['DATA NASCIMENTO']);
         const dataAdmissao = excelDateToISO(linha['DATA ADMISSÃO'] || linha['DATA ADMISSAO']);
         const funcao = titleCaseNome(linha['FUNÇÃO'] || linha['FUNCAO'] || '');
@@ -12590,10 +12620,8 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
         const centroCusto = titleCaseNome(linha['CENTRO CUSTO']);
         const unidadeTrabalho = titleCaseNome(linha['UNIDADE TRABALHO']);
 
-
         if (!nome || !cpf || !dataNascimento || !setor || !perfil || !status) {
           const erroMsg = 'Campos obrigatórios ausentes: NOME, CPF, DATA NASCIMENTO, SETOR, PERFIL e STATUS.';
-
 
           erros.push({
             linha: numeroLinha,
@@ -12609,8 +12637,6 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
           [cpf]
         );
 
-
-
         if (cpfExistente.length > 0) {
           ignorados++;
 
@@ -12622,6 +12648,31 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
           });
 
           continue;
+        }
+
+        let emailFinal = emailInformado;
+
+        if (emailFinal) {
+          const [emailExistente] = await conn.query(
+            `SELECT ID, NOME, EMAIL FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
+            [emailFinal]
+          );
+
+          if (emailExistente.length > 0) {
+            ignorados++;
+
+            ignoradosDetalhes.push({
+              linha: numeroLinha,
+              nome,
+              cpf,
+              email: emailFinal,
+              message: 'E-mail já cadastrado. Registro ignorado.'
+            });
+
+            continue;
+          }
+        } else {
+          emailFinal = await gerarEmailTemporario(conn, cpf);
         }
 
         if (setor) {
@@ -12640,10 +12691,9 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
           await obterOuCriarPorNome(conn, 'SF_CENTRO_CUSTO', centroCusto);
         }
 
-        const emailGerado = `${cpf}@temp.local`;
         const senhaHash = await bcrypt.hash('123456', 12);
 
-        const result = await conn.query(
+        const [result] = await conn.query(
           `INSERT INTO SF_USUARIO (
             NOME,
             EMAIL,
@@ -12662,13 +12712,13 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
           [
             nome,
-            emailGerado,
+            emailFinal,
             senhaHash,
-            null,
+            telefone || null,
             perfil,
             setor,
             funcao || null,
-            dataAdmissao,
+            dataAdmissao || null,
             centroCusto || null,
             unidadeTrabalho || null,
             status,
@@ -12684,6 +12734,8 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
           id: result.insertId,
           nome,
           cpf,
+          email: emailFinal,
+          telefone: telefone || '',
           message: 'Usuário importado com sucesso.'
         });
       } catch (erroLinha) {
@@ -12702,7 +12754,6 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
       }
     }
 
-
     await conn.commit();
 
     const retorno = {
@@ -12716,7 +12767,6 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
       ignoradosDetalhes,
       erros
     };
-
 
     return res.json(retorno);
   } catch (err) {
