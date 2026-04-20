@@ -6316,6 +6316,726 @@ app.delete('/api/estoque/centro-custo/transferencias/:id', async (req, res) => {
   }
 });
 
+async function obterSaldoCentroCustoComSaidas(conn, idProduto, idLocalOrigem, ignoreSaidaId = null) {
+  const saldoBase = await obterSaldoCentroCusto(conn, idProduto, idLocalOrigem);
+
+  const paramsSaidas = [Number(idProduto), Number(idLocalOrigem)];
+  let sqlSaidas = `
+    SELECT COALESCE(SUM(COALESCE(s.QUANTIDADE, 0)), 0) AS qtd_saida
+    FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+    WHERE s.ID_PRODUTO = ?
+      AND s.ID_LOCAL_ORIGEM = ?
+  `;
+
+  if (ignoreSaidaId) {
+    sqlSaidas += ' AND s.ID <> ?';
+    paramsSaidas.push(Number(ignoreSaidaId));
+  }
+
+  const [rowsSaidas] = await conn.query(sqlSaidas, paramsSaidas);
+
+  const paramsDevolvidas = [Number(idProduto), Number(idLocalOrigem)];
+  let sqlDevolvidas = `
+    SELECT COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) AS qtd_devolvida
+    FROM SF_ESTOQUE_SAIDA_DEVOLUCAO d
+    INNER JOIN SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+      ON s.ID = d.ID_SAIDA
+    WHERE s.ID_PRODUTO = ?
+      AND s.ID_LOCAL_ORIGEM = ?
+  `;
+
+  if (ignoreSaidaId) {
+    sqlDevolvidas += ' AND s.ID <> ?';
+    paramsDevolvidas.push(Number(ignoreSaidaId));
+  }
+
+  const [rowsDevolvidas] = await conn.query(sqlDevolvidas, paramsDevolvidas);
+
+  const qtdSaida = Number(rowsSaidas?.[0]?.qtd_saida ?? 0);
+  const qtdDevolvida = Number(rowsDevolvidas?.[0]?.qtd_devolvida ?? 0);
+  const saldo = Number(saldoBase?.saldo ?? 0) - qtdSaida + qtdDevolvida;
+
+  return {
+    qtdRecebida: Number(saldoBase?.qtdRecebida ?? 0),
+    qtdEnviada: Number(saldoBase?.qtdEnviada ?? 0),
+    qtdSaida,
+    qtdDevolvida,
+    saldo: saldo < 0 ? 0 : saldo
+  };
+}
+
+async function obterResumoSaidaCentroCusto(conn, idSaida) {
+  const [rows] = await conn.query(
+    `
+    SELECT
+      s.*,
+      COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) AS QTD_DEVOLVIDA
+    FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+    LEFT JOIN SF_ESTOQUE_SAIDA_DEVOLUCAO d
+      ON d.ID_SAIDA = s.ID
+    WHERE s.ID = ?
+    GROUP BY s.ID
+    LIMIT 1
+    `,
+    [Number(idSaida)]
+  );
+
+  const saida = rows[0] || null;
+  if (!saida) return null;
+
+  const quantidadeSaida = Number(saida.QUANTIDADE ?? 0);
+  const qtdDevolvida = Number(saida.QTD_DEVOLVIDA ?? 0);
+  const saldoPendente = quantidadeSaida - qtdDevolvida;
+
+  return {
+    ...saida,
+    QTD_DEVOLVIDA: qtdDevolvida,
+    SALDO_PENDENTE: saldoPendente < 0 ? 0 : saldoPendente
+  };
+}
+
+async function inserirLogSaidaCentroCusto(conn, {
+  idSaida,
+  acao,
+  saldoAntes,
+  quantidadeSaida,
+  saldoDepois,
+  usuario,
+  observacao
+}) {
+  await conn.query(
+    `
+    INSERT INTO SF_ESTOQUE_SAIDA_CENTRO_CUSTO_LOG
+      (
+        ID_SAIDA,
+        ACAO,
+        SALDO_ANTES,
+        QUANTIDADE_SAIDA,
+        SALDO_DEPOIS,
+        USUARIO,
+        OBSERVACAO
+      )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      Number(idSaida),
+      textolivreTr(acao, 50),
+      parseDecimal(saldoAntes) || 0,
+      parseDecimal(quantidadeSaida) || 0,
+      parseDecimal(saldoDepois) || 0,
+      textolivreTr(usuario, 150) || 'SISTEMA',
+      textolivreTr(observacao, 255) || null
+    ]
+  );
+}
+
+async function inserirLogDevolucaoSaidaCentroCusto(conn, {
+  idDevolucao,
+  idSaida,
+  acao,
+  saldoSaidaAntes,
+  quantidadeDevolvida,
+  saldoSaidaDepois,
+  usuario,
+  observacao
+}) {
+  await conn.query(
+    `
+    INSERT INTO SF_ESTOQUE_SAIDA_DEVOLUCAO_LOG
+      (
+        ID_DEVOLUCAO,
+        ID_SAIDA,
+        ACAO,
+        SALDO_SAIDA_ANTES,
+        QUANTIDADE_DEVOLVIDA,
+        SALDO_SAIDA_DEPOIS,
+        USUARIO,
+        OBSERVACAO
+      )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      Number(idDevolucao),
+      Number(idSaida),
+      textolivreTr(acao, 50),
+      parseDecimal(saldoSaidaAntes) || 0,
+      parseDecimal(quantidadeDevolvida) || 0,
+      parseDecimal(saldoSaidaDepois) || 0,
+      textolivreTr(usuario, 150) || 'SISTEMA',
+      textolivreTr(observacao, 255) || null
+    ]
+  );
+}
+
+app.get('/api/estoque/centro-custo/saidas', async (req, res) => {
+  let conn;
+
+  try {
+    const idProduto = Number(req.query.idProduto);
+    const idLocalOrigem = Number(req.query.idLocalOrigem);
+
+    if (!idProduto || !idLocalOrigem) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe idProduto e idLocalOrigem.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const produto = await validarProdutoSistema(conn, idProduto);
+    if (!produto) {
+      return res.status(404).json({
+        success: false,
+        message: 'Produto não encontrado na SF_PRODUTOS.'
+      });
+    }
+
+    const localOrigem = await validarLocalCentrocusto(conn, idLocalOrigem);
+    if (!localOrigem) {
+      return res.status(404).json({
+        success: false,
+        message: 'Centro de custo de origem não encontrado.'
+      });
+    }
+
+    const [rows] = await conn.query(
+      `
+      SELECT
+        s.ID,
+        s.ID_PRODUTO,
+        s.ID_LOCAL_ORIGEM,
+        p.codigo AS CODIGO_PRODUTO,
+        p.descricao AS DESCRICAO_PRODUTO,
+        COALESCE(s.UNIDADE, p.unidade, 'UN') AS UNIDADE,
+        lo.NOME AS LOCAL_ORIGEM,
+        s.QUANTIDADE,
+        s.FINALIDADE,
+        s.USUARIO_SOLICITANTE,
+        s.OBSERVACAO,
+        s.USUARIO_CADASTRO,
+        s.DATA_CADASTRO,
+        s.USUARIO_ALTERACAO,
+        s.DATA_ALTERACAO,
+        COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) AS QUANTIDADE_DEVOLVIDA,
+        (
+          COALESCE(s.QUANTIDADE, 0) - COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0)
+        ) AS SALDO_PENDENTE,
+        CASE
+          WHEN COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) <= 0 THEN 'ATIVA'
+          WHEN COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) < COALESCE(s.QUANTIDADE, 0) THEN 'PARCIALMENTE_DEVOLVIDA'
+          ELSE 'DEVOLVIDA_TOTALMENTE'
+        END AS STATUS_SAIDA
+      FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+      INNER JOIN SF_PRODUTOS p
+        ON p.id = s.ID_PRODUTO
+      INNER JOIN SF_CENTRO_CUSTO lo
+        ON lo.ID = s.ID_LOCAL_ORIGEM
+      LEFT JOIN SF_ESTOQUE_SAIDA_DEVOLUCAO d
+        ON d.ID_SAIDA = s.ID
+      WHERE s.ID_PRODUTO = ?
+        AND s.ID_LOCAL_ORIGEM = ?
+      GROUP BY
+        s.ID,
+        s.ID_PRODUTO,
+        s.ID_LOCAL_ORIGEM,
+        p.codigo,
+        p.descricao,
+        s.UNIDADE,
+        lo.NOME,
+        s.QUANTIDADE,
+        s.FINALIDADE,
+        s.USUARIO_SOLICITANTE,
+        s.OBSERVACAO,
+        s.USUARIO_CADASTRO,
+        s.DATA_CADASTRO,
+        s.USUARIO_ALTERACAO,
+        s.DATA_ALTERACAO
+      ORDER BY s.DATA_CADASTRO DESC, s.ID DESC
+      `,
+      [idProduto, idLocalOrigem]
+    );
+
+    const saldoInfo = await obterSaldoCentroCustoComSaidas(conn, idProduto, idLocalOrigem);
+
+    return res.json({
+      success: true,
+      produto,
+      localOrigem,
+      saldo: saldoInfo.saldo,
+      qtdRecebida: saldoInfo.qtdRecebida,
+      qtdEnviada: saldoInfo.qtdEnviada,
+      qtdSaida: saldoInfo.qtdSaida,
+      qtdDevolvida: saldoInfo.qtdDevolvida,
+      items: rows
+    });
+  } catch (err) {
+    console.error('Erro ao listar saídas do centro de custo:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar saídas do centro de custo.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/estoque/centro-custo/saidas', async (req, res) => {
+  let conn;
+
+  try {
+    const idProduto = Number(req.body.idProduto);
+    const idLocalOrigem = Number(req.body.idLocalOrigem);
+    const quantidade = parseDecimal(req.body.quantidade);
+    const unidade = textolivreTr(req.body.unidade, 10);
+    const finalidade = textolivreTr(req.body.finalidade, 255);
+    const usuarioSolicitante = textolivreTr(req.body.usuarioSolicitante, 150);
+    const observacao = textolivreTr(req.body.observacao, 255);
+    const usuario = textolivreTr(req.body.usuario, 150) || 'SISTEMA';
+
+    if (!idProduto || !idLocalOrigem) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe idProduto e idLocalOrigem.'
+      });
+    }
+
+    if (!(quantidade > 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe uma quantidade válida para saída.'
+      });
+    }
+
+    if (!finalidade) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a finalidade da utilização.'
+      });
+    }
+
+    if (!usuarioSolicitante) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o usuário solicitante.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const produto = await validarProdutoSistema(conn, idProduto);
+    if (!produto) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Produto não encontrado na SF_PRODUTOS.'
+      });
+    }
+
+    const localOrigem = await validarLocalCentrocusto(conn, idLocalOrigem);
+    if (!localOrigem) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Centro de custo de origem não encontrado.'
+      });
+    }
+
+    const saldoInfo = await obterSaldoCentroCustoComSaidas(conn, idProduto, idLocalOrigem);
+    const saldoAntes = Number(saldoInfo.saldo ?? 0);
+
+    if (quantidade > saldoAntes) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Quantidade excede o saldo disponível (${saldoAntes}).`
+      });
+    }
+
+    const [result] = await conn.query(
+      `
+      INSERT INTO SF_ESTOQUE_SAIDA_CENTRO_CUSTO
+        (
+          ID_PRODUTO,
+          ID_LOCAL_ORIGEM,
+          QUANTIDADE,
+          UNIDADE,
+          FINALIDADE,
+          USUARIO_SOLICITANTE,
+          OBSERVACAO,
+          USUARIO_CADASTRO
+        )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        idProduto,
+        idLocalOrigem,
+        quantidade,
+        unidade || produto.unidade || 'UN',
+        finalidade,
+        usuarioSolicitante,
+        observacao || null,
+        usuario
+      ]
+    );
+
+    const idSaida = result.insertId;
+    const saldoDepois = saldoAntes - quantidade;
+
+    await inserirLogSaidaCentroCusto(conn, {
+      idSaida,
+      acao: 'CRIACAO',
+      saldoAntes,
+      quantidadeSaida: quantidade,
+      saldoDepois,
+      usuario,
+      observacao: observacao || 'Saída de material registrada.'
+    });
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      id: idSaida,
+      message: 'Saída registrada com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao registrar saída do centro de custo:', err);
+    try {
+      if (conn) await conn.rollback();
+    } catch {}
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao registrar saída do centro de custo.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/estoque/centro-custo/saidas/:id/logs', async (req, res) => {
+  let conn;
+
+  try {
+    const idSaida = Number(req.params.id);
+
+    if (!idSaida) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o id da saída.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const saida = await obterResumoSaidaCentroCusto(conn, idSaida);
+    if (!saida) {
+      return res.status(404).json({
+        success: false,
+        message: 'Saída não encontrada.'
+      });
+    }
+
+    const [rows] = await conn.query(
+      `
+      SELECT
+        l.ID,
+        l.ID_SAIDA,
+        l.ACAO,
+        l.SALDO_ANTES,
+        l.QUANTIDADE_SAIDA,
+        l.SALDO_DEPOIS,
+        l.USUARIO,
+        l.OBSERVACAO,
+        l.DATA_HORA
+      FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO_LOG l
+      WHERE l.ID_SAIDA = ?
+      ORDER BY l.DATA_HORA DESC, l.ID DESC
+      `,
+      [idSaida]
+    );
+
+    return res.json({
+      success: true,
+      item: saida,
+      items: rows
+    });
+  } catch (err) {
+    console.error('Erro ao listar logs da saída:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar logs da saída.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/estoque/centro-custo/saidas/:id/devolucoes', async (req, res) => {
+  let conn;
+
+  try {
+    const idSaida = Number(req.params.id);
+
+    if (!idSaida) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o id da saída.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const saida = await obterResumoSaidaCentroCusto(conn, idSaida);
+    if (!saida) {
+      return res.status(404).json({
+        success: false,
+        message: 'Saída não encontrada.'
+      });
+    }
+
+    const [rows] = await conn.query(
+      `
+      SELECT
+        d.ID,
+        d.ID_SAIDA,
+        d.QUANTIDADE,
+        d.OBSERVACAO,
+        d.USUARIO_DEVOLUCAO,
+        d.DATA_CADASTRO
+      FROM SF_ESTOQUE_SAIDA_DEVOLUCAO d
+      WHERE d.ID_SAIDA = ?
+      ORDER BY d.DATA_CADASTRO DESC, d.ID DESC
+      `,
+      [idSaida]
+    );
+
+    return res.json({
+      success: true,
+      item: saida,
+      items: rows
+    });
+  } catch (err) {
+    console.error('Erro ao listar devoluções da saída:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar devoluções da saída.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/estoque/centro-custo/saidas/:id/devolucoes', async (req, res) => {
+  let conn;
+
+  try {
+    const idSaida = Number(req.params.id);
+    const quantidade = parseDecimal(req.body.quantidade);
+    const observacao = textolivreTr(req.body.observacao, 255);
+    const usuario = textolivreTr(req.body.usuario, 150) || 'SISTEMA';
+
+    if (!idSaida) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o id da saída.'
+      });
+    }
+
+    if (!(quantidade > 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe uma quantidade válida para devolução.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const saida = await obterResumoSaidaCentroCusto(conn, idSaida);
+    if (!saida) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Saída não encontrada.'
+      });
+    }
+
+    const saldoPendente = Number(saida.SALDO_PENDENTE ?? 0);
+    if (saldoPendente <= 0) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Esta saída já foi totalmente devolvida.'
+      });
+    }
+
+    if (quantidade > saldoPendente) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `A devolução não pode exceder o saldo pendente da saída (${saldoPendente}).`
+      });
+    }
+
+    const [result] = await conn.query(
+      `
+      INSERT INTO SF_ESTOQUE_SAIDA_DEVOLUCAO
+        (
+          ID_SAIDA,
+          QUANTIDADE,
+          OBSERVACAO,
+          USUARIO_DEVOLUCAO
+        )
+      VALUES (?, ?, ?, ?)
+      `,
+      [
+        idSaida,
+        quantidade,
+        observacao || null,
+        usuario
+      ]
+    );
+
+    const idDevolucao = result.insertId;
+    const saldoSaidaAntes = saldoPendente;
+    const saldoSaidaDepois = saldoPendente - quantidade;
+
+    await inserirLogDevolucaoSaidaCentroCusto(conn, {
+      idDevolucao,
+      idSaida,
+      acao: 'CRIACAO',
+      saldoSaidaAntes,
+      quantidadeDevolvida: quantidade,
+      saldoSaidaDepois,
+      usuario,
+      observacao: observacao || 'Devolução de saída registrada.'
+    });
+
+    await conn.query(
+      `
+      UPDATE SF_ESTOQUE_SAIDA_CENTRO_CUSTO
+      SET
+        USUARIO_ALTERACAO = ?,
+        DATA_ALTERACAO = NOW()
+      WHERE ID = ?
+      `,
+      [usuario, idSaida]
+    );
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      id: idDevolucao,
+      devolucaoParcial: saldoSaidaDepois > 0,
+      devolucaoTotal: saldoSaidaDepois <= 0,
+      message:
+        saldoSaidaDepois > 0
+          ? 'Devolução parcial registrada com sucesso.'
+          : 'Devolução total registrada com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao registrar devolução da saída:', err);
+    try {
+      if (conn) await conn.rollback();
+    } catch {}
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao registrar devolução da saída.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/estoque/centro-custo/saidas/:id/historico', async (req, res) => {
+  let conn;
+
+  try {
+    const idSaida = Number(req.params.id);
+
+    if (!idSaida) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o id da saída.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const saida = await obterResumoSaidaCentroCusto(conn, idSaida);
+    if (!saida) {
+      return res.status(404).json({
+        success: false,
+        message: 'Saída não encontrada.'
+      });
+    }
+
+    const [rows] = await conn.query(
+      `
+      SELECT
+        'SAIDA' AS TIPO_EVENTO,
+        l.ID,
+        l.ID_SAIDA,
+        NULL AS ID_DEVOLUCAO,
+        l.ACAO,
+        l.SALDO_ANTES,
+        l.QUANTIDADE_SAIDA AS QUANTIDADE_EVENTO,
+        l.SALDO_DEPOIS,
+        l.USUARIO,
+        l.OBSERVACAO,
+        l.DATA_HORA
+      FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO_LOG l
+      WHERE l.ID_SAIDA = ?
+
+      UNION ALL
+
+      SELECT
+        'DEVOLUCAO' AS TIPO_EVENTO,
+        dl.ID,
+        dl.ID_SAIDA,
+        dl.ID_DEVOLUCAO,
+        dl.ACAO,
+        dl.SALDO_SAIDA_ANTES AS SALDO_ANTES,
+        dl.QUANTIDADE_DEVOLVIDA AS QUANTIDADE_EVENTO,
+        dl.SALDO_SAIDA_DEPOIS AS SALDO_DEPOIS,
+        dl.USUARIO,
+        dl.OBSERVACAO,
+        dl.DATA_HORA
+      FROM SF_ESTOQUE_SAIDA_DEVOLUCAO_LOG dl
+      WHERE dl.ID_SAIDA = ?
+
+      ORDER BY DATA_HORA DESC, ID DESC
+      `,
+      [idSaida, idSaida]
+    );
+
+    return res.json({
+      success: true,
+      item: saida,
+      items: rows
+    });
+  } catch (err) {
+    console.error('Erro ao listar histórico da saída:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar histórico da saída.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+
+
 // emails
 
 // PUT Destinatário (editar)
