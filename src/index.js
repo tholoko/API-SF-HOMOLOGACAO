@@ -4808,6 +4808,31 @@ app.post('/api/estoque/transferencias', async (req, res) => {
 
     await conn.commit();
 
+    const centroCustoDestino = obterNomeCentroCustoDestino(localDestino);
+
+    const mensagemWhatsapp = montarMensagemTransferenciaWhatsapp({
+      acao: 'CRIACAO',
+      codigo: produto?.CODIGO || produto?.codigo || '',
+      descricao: produto?.DESCRICAO || produto?.descricao || 'Material',
+      quantidade,
+      unidade: unidade || produto?.unidade || 'UN',
+      localOrigem: localOrigem?.NOME || localOrigem?.nome || '',
+      localDestino: localDestino?.NOME || localDestino?.nome || '',
+      centroCusto: centroCustoDestino,
+      usuario,
+      tipoTransferencia,
+      observacao
+    });
+
+    try {
+      await notificarUsuariosCentroCustoTransferencia(conn, {
+        centroCusto: centroCustoDestino,
+        mensagem: mensagemWhatsapp
+      });
+    } catch (erroNotificacao) {
+      console.error('Transferência criada com sucesso, mas houve falha ao enviar WhatsApp:', erroNotificacao);
+    }
+
     return res.json({
       success: true,
       id: idTransferencia,
@@ -4981,6 +5006,31 @@ app.put('/api/estoque/transferencias/:id', async (req, res) => {
     });
 
     await conn.commit();
+
+    const centroCustoDestino = obterNomeCentroCustoDestino(localDestino);
+
+    const mensagemWhatsapp = montarMensagemTransferenciaWhatsapp({
+      acao: 'EDICAO',
+      codigo: produto?.CODIGO || produto?.codigo || '',
+      descricao: produto?.DESCRICAO || produto?.descricao || 'Material',
+      quantidade: quantidadeNova,
+      unidade: atual.UNIDADE || produto?.unidade || 'UN',
+      localOrigem: localOrigem?.NOME || localOrigem?.nome || '',
+      localDestino: localDestino?.NOME || localDestino?.nome || '',
+      centroCusto: centroCustoDestino,
+      usuario,
+      tipoTransferencia: atual.TIPO_TRANSFERENCIA || req.body.tipoTransferencia || 'LOCAL',
+      observacao
+    });
+
+    try {
+      await notificarUsuariosCentroCustoTransferencia(conn, {
+        centroCusto: centroCustoDestino,
+        mensagem: mensagemWhatsapp
+      });
+    } catch (erroNotificacao) {
+      console.error('Transferência editada com sucesso, mas houve falha ao enviar WhatsApp:', erroNotificacao);
+    }
 
     return res.json({
       success: true,
