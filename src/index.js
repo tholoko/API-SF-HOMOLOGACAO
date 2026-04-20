@@ -6422,12 +6422,17 @@ async function obterResumoSaidaCentroCusto(conn, idSaida) {
 
   const quantidadeSaida = Number(saida.QUANTIDADE ?? 0);
   const qtdDevolvida = Number(saida.QTD_DEVOLVIDA ?? 0);
-  const saldoPendente = quantidadeSaida - qtdDevolvida;
+  const saldoPendente = Math.max(quantidadeSaida - qtdDevolvida, 0);
+
+  let statusSaida = 'ATIVA';
+  if (qtdDevolvida > 0 && saldoPendente > 0) statusSaida = 'PARCIALMENTE_DEVOLVIDA';
+  if (saldoPendente === 0) statusSaida = 'DEVOLVIDA_TOTALMENTE';
 
   return {
     ...saida,
     QTD_DEVOLVIDA: qtdDevolvida,
-    SALDO_PENDENTE: saldoPendente < 0 ? 0 : saldoPendente
+    SALDO_PENDENTE: saldoPendente,
+    STATUS_SAIDA: statusSaida
   };
 }
 
@@ -6536,7 +6541,7 @@ app.get('/api/estoque/centro-custo/saidas', async (req, res) => {
       });
     }
 
-    const [rows] = await conn.query(
+    const [saidas] = await conn.query(
       `
       SELECT
         s.ID,
@@ -6553,45 +6558,76 @@ app.get('/api/estoque/centro-custo/saidas', async (req, res) => {
         s.USUARIO_CADASTRO,
         s.DATA_CADASTRO,
         s.USUARIO_ALTERACAO,
-        s.DATA_ALTERACAO,
-        COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) AS QUANTIDADE_DEVOLVIDA,
-        (
-          COALESCE(s.QUANTIDADE, 0) - COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0)
-        ) AS SALDO_PENDENTE,
-        CASE
-          WHEN COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) <= 0 THEN 'ATIVA'
-          WHEN COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) < COALESCE(s.QUANTIDADE, 0) THEN 'PARCIALMENTE_DEVOLVIDA'
-          ELSE 'DEVOLVIDA_TOTALMENTE'
-        END AS STATUS_SAIDA
+        s.DATA_ALTERACAO
       FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
       INNER JOIN SF_PRODUTOS p
         ON p.id = s.ID_PRODUTO
       INNER JOIN SF_CENTRO_CUSTO lo
         ON lo.ID = s.ID_LOCAL_ORIGEM
-      LEFT JOIN SF_ESTOQUE_SAIDA_DEVOLUCAO d
-        ON d.ID_SAIDA = s.ID
       WHERE s.ID_PRODUTO = ?
         AND s.ID_LOCAL_ORIGEM = ?
-      GROUP BY
-        s.ID,
-        s.ID_PRODUTO,
-        s.ID_LOCAL_ORIGEM,
-        p.codigo,
-        p.descricao,
-        s.UNIDADE,
-        lo.NOME,
-        s.QUANTIDADE,
-        s.FINALIDADE,
-        s.USUARIO_SOLICITANTE,
-        s.OBSERVACAO,
-        s.USUARIO_CADASTRO,
-        s.DATA_CADASTRO,
-        s.USUARIO_ALTERACAO,
-        s.DATA_ALTERACAO
       ORDER BY s.DATA_CADASTRO DESC, s.ID DESC
       `,
       [idProduto, idLocalOrigem]
     );
+
+    const idsSaida = saidas.map(s => Number(s.ID)).filter(Boolean);
+
+    let devolucoes = [];
+    if (idsSaida.length) {
+      const placeholders = idsSaida.map(() => '?').join(',');
+
+      const [rowsDevolucoes] = await conn.query(
+        `
+        SELECT
+          d.ID,
+          d.ID_SAIDA,
+          d.QUANTIDADE,
+          d.OBSERVACAO,
+          d.USUARIO_DEVOLUCAO,
+          d.DATA_CADASTRO
+        FROM SF_ESTOQUE_SAIDA_DEVOLUCAO d
+        WHERE d.ID_SAIDA IN (${placeholders})
+        ORDER BY d.DATA_CADASTRO DESC, d.ID DESC
+        `,
+        idsSaida
+      );
+
+      devolucoes = rowsDevolucoes;
+    }
+
+    const devolucoesPorSaida = devolucoes.reduce((acc, dev) => {
+      const idSaida = Number(dev.ID_SAIDA);
+      if (!acc[idSaida]) acc[idSaida] = [];
+      acc[idSaida].push(dev);
+      return acc;
+    }, {});
+
+    const items = saidas.map(saida => {
+      const listaDevolucoes = devolucoesPorSaida[Number(saida.ID)] || [];
+      const quantidadeSaida = Number(saida.QUANTIDADE ?? 0);
+      const quantidadeDevolvida = listaDevolucoes.reduce(
+        (total, d) => total + Number(d.QUANTIDADE ?? 0),
+        0
+      );
+      const saldoPendente = Math.max(quantidadeSaida - quantidadeDevolvida, 0);
+
+      let statusSaida = 'ATIVA';
+      if (quantidadeDevolvida > 0 && saldoPendente > 0) {
+        statusSaida = 'PARCIALMENTE_DEVOLVIDA';
+      }
+      if (saldoPendente === 0) {
+        statusSaida = 'DEVOLVIDA_TOTALMENTE';
+      }
+
+      return {
+        ...saida,
+        QUANTIDADE_DEVOLVIDA: quantidadeDevolvida,
+        SALDO_PENDENTE: saldoPendente,
+        STATUS_SAIDA: statusSaida,
+        devolucoes: listaDevolucoes
+      };
+    });
 
     const saldoInfo = await obterSaldoCentroCustoComSaidas(conn, idProduto, idLocalOrigem);
 
@@ -6604,7 +6640,7 @@ app.get('/api/estoque/centro-custo/saidas', async (req, res) => {
       qtdEnviada: saldoInfo.qtdEnviada,
       qtdSaida: saldoInfo.qtdSaida,
       qtdDevolvida: saldoInfo.qtdDevolvida,
-      items: rows
+      items
     });
   } catch (err) {
     console.error('Erro ao listar saídas do centro de custo:', err);
@@ -7028,8 +7064,13 @@ app.get('/api/estoque/centro-custo/saidas/:id/historico', async (req, res) => {
         l.SALDO_DEPOIS,
         l.USUARIO,
         l.OBSERVACAO,
-        l.DATA_HORA
+        l.DATA_HORA,
+        s.FINALIDADE,
+        s.USUARIO_SOLICITANTE,
+        COALESCE(s.UNIDADE, 'UN') AS UNIDADE
       FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO_LOG l
+      INNER JOIN SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+        ON s.ID = l.ID_SAIDA
       WHERE l.ID_SAIDA = ?
 
       UNION ALL
@@ -7045,8 +7086,13 @@ app.get('/api/estoque/centro-custo/saidas/:id/historico', async (req, res) => {
         dl.SALDO_SAIDA_DEPOIS AS SALDO_DEPOIS,
         dl.USUARIO,
         dl.OBSERVACAO,
-        dl.DATA_HORA
+        dl.DATA_HORA,
+        s.FINALIDADE,
+        s.USUARIO_SOLICITANTE,
+        COALESCE(s.UNIDADE, 'UN') AS UNIDADE
       FROM SF_ESTOQUE_SAIDA_DEVOLUCAO_LOG dl
+      INNER JOIN SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+        ON s.ID = dl.ID_SAIDA
       WHERE dl.ID_SAIDA = ?
 
       ORDER BY DATA_HORA DESC, ID DESC
