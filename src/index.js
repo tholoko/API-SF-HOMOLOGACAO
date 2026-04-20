@@ -5604,9 +5604,26 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
         COALESCE(env.qtd_enviada, 0) AS QTDENVIADA,
         COALESCE(pend.qtd_transferida_nao_recebida, 0) AS QTDTRANSFERIDANAORECEBIDA,
 
+        COALESCE(saida.qtd_saida, 0) AS QTDSAIDA,
+        COALESCE(dev.qtd_devolvida, 0) AS QTDDEVOLVIDA,
+
         CASE
-          WHEN COALESCE(rec.qtd_recebida, 0) - COALESCE(env.qtd_enviada, 0) < 0 THEN 0
-          ELSE COALESCE(rec.qtd_recebida, 0) - COALESCE(env.qtd_enviada, 0)
+          WHEN COALESCE(saida.qtd_saida, 0) - COALESCE(dev.qtd_devolvida, 0) < 0 THEN 0
+          ELSE COALESCE(saida.qtd_saida, 0) - COALESCE(dev.qtd_devolvida, 0)
+        END AS QTDSAIDALIQUIDA,
+
+        CASE
+          WHEN
+            COALESCE(rec.qtd_recebida, 0)
+            - COALESCE(env.qtd_enviada, 0)
+            - COALESCE(saida.qtd_saida, 0)
+            + COALESCE(dev.qtd_devolvida, 0) < 0
+          THEN 0
+          ELSE
+            COALESCE(rec.qtd_recebida, 0)
+            - COALESCE(env.qtd_enviada, 0)
+            - COALESCE(saida.qtd_saida, 0)
+            + COALESCE(dev.qtd_devolvida, 0)
         END AS QUANTIDADE
 
       FROM SF_PRODUTOS p
@@ -5641,6 +5658,26 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
         GROUP BY t.ID_PRODUTO
       ) pend ON pend.ID_PRODUTO = p.id
 
+      LEFT JOIN (
+        SELECT
+          s.ID_PRODUTO,
+          SUM(COALESCE(s.QUANTIDADE, 0)) AS qtd_saida
+        FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+        WHERE s.ID_LOCAL_ORIGEM = ?
+        GROUP BY s.ID_PRODUTO
+      ) saida ON saida.ID_PRODUTO = p.id
+
+      LEFT JOIN (
+        SELECT
+          s.ID_PRODUTO,
+          SUM(COALESCE(d.QUANTIDADE, 0)) AS qtd_devolvida
+        FROM SF_ESTOQUE_SAIDA_DEVOLUCAO d
+        INNER JOIN SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+          ON s.ID = d.ID_SAIDA
+        WHERE s.ID_LOCAL_ORIGEM = ?
+        GROUP BY s.ID_PRODUTO
+      ) dev ON dev.ID_PRODUTO = p.id
+
       CROSS JOIN (
         SELECT ID, NOME
         FROM SF_CENTRO_CUSTO
@@ -5653,10 +5690,26 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
         WHERE t.ID_PRODUTO = p.id
           AND (t.ID_LOCAL_DESTINO = ? OR t.ID_LOCAL_ORIGEM = ?)
       )
+      OR EXISTS (
+        SELECT 1
+        FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+        WHERE s.ID_PRODUTO = p.id
+          AND s.ID_LOCAL_ORIGEM = ?
+      )
 
       ORDER BY p.codigo ASC, p.descricao ASC
       `,
-      [centro.ID, centro.ID, centro.ID, centro.ID, centro.ID, centro.ID]
+      [
+        centro.ID, // rec
+        centro.ID, // env
+        centro.ID, // pend
+        centro.ID, // saida
+        centro.ID, // dev
+        centro.ID, // centro cross
+        centro.ID, // exists transferencia destino
+        centro.ID, // exists transferencia origem
+        centro.ID  // exists saida
+      ]
     );
 
     return res.json({
