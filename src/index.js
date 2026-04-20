@@ -5721,7 +5721,7 @@ app.post('/api/locais-centrocusto', async (req, res) => {
   }
 });
 
-async function obterSaldoCentroCusto(conn, idProduto, idLocalOrigem, ignoreTransferenciaId = null) {
+async function obterSaldoCentroCusto(conn, idProduto, idLocalOrigem, ignoreTransferenciaId = null, ignoreSaidaId = null) {
   const paramsRecebidas = [Number(idProduto), Number(idLocalOrigem)];
   const [rowsRecebidas] = await conn.query(
     `
@@ -5750,13 +5750,50 @@ async function obterSaldoCentroCusto(conn, idProduto, idLocalOrigem, ignoreTrans
 
   const [rowsEnviadas] = await conn.query(sqlEnviadas, paramsEnviadas);
 
+  const paramsSaidas = [Number(idProduto), Number(idLocalOrigem)];
+  let sqlSaidas = `
+    SELECT COALESCE(SUM(COALESCE(s.QUANTIDADE, 0)), 0) AS qtd_saida
+    FROM SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+    WHERE s.ID_PRODUTO = ?
+      AND s.ID_LOCAL_ORIGEM = ?
+  `;
+
+  if (ignoreSaidaId) {
+    sqlSaidas += ' AND s.ID <> ?';
+    paramsSaidas.push(Number(ignoreSaidaId));
+  }
+
+  const [rowsSaidas] = await conn.query(sqlSaidas, paramsSaidas);
+
+  const paramsDevolvidas = [Number(idProduto), Number(idLocalOrigem)];
+  let sqlDevolvidas = `
+    SELECT COALESCE(SUM(COALESCE(d.QUANTIDADE, 0)), 0) AS qtd_devolvida
+    FROM SF_ESTOQUE_SAIDA_DEVOLUCAO d
+    INNER JOIN SF_ESTOQUE_SAIDA_CENTRO_CUSTO s
+      ON s.ID = d.ID_SAIDA
+    WHERE s.ID_PRODUTO = ?
+      AND s.ID_LOCAL_ORIGEM = ?
+  `;
+
+  if (ignoreSaidaId) {
+    sqlDevolvidas += ' AND s.ID <> ?';
+    paramsDevolvidas.push(Number(ignoreSaidaId));
+  }
+
+  const [rowsDevolvidas] = await conn.query(sqlDevolvidas, paramsDevolvidas);
+
   const qtdRecebida = Number(rowsRecebidas?.[0]?.qtd_recebida ?? 0);
   const qtdEnviada = Number(rowsEnviadas?.[0]?.qtd_enviada ?? 0);
-  const saldo = qtdRecebida - qtdEnviada;
+  const qtdSaida = Number(rowsSaidas?.[0]?.qtd_saida ?? 0);
+  const qtdDevolvida = Number(rowsDevolvidas?.[0]?.qtd_devolvida ?? 0);
+
+  const saldo = qtdRecebida - qtdEnviada - qtdSaida + qtdDevolvida;
 
   return {
     qtdRecebida,
     qtdEnviada,
+    qtdSaida,
+    qtdDevolvida,
     saldo: saldo < 0 ? 0 : saldo
   };
 }
