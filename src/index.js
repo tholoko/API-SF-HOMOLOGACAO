@@ -13666,6 +13666,18 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
 
 // notificação de tranferencia WhatsApp
 
+function obterNomeCentroCustoDestino(localDestino) {
+  return (
+    localDestino?.CENTRO_CUSTO ||
+    localDestino?.centro_custo ||
+    localDestino?.NOME ||
+    localDestino?.nome ||
+    localDestino?.DESCRICAO ||
+    localDestino?.descricao ||
+    ''
+  ).toString().trim();
+}
+
 function normalizarNumeroWhatsAppBR(numero) {
   const digitos = String(numero || '').replace(/\D/g, '');
 
