@@ -5552,27 +5552,27 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
       `
       SELECT
         t.ID,
-        t.ID_PRODUTO,
-        t.ID_ENTRADA_ORIGEM,
-        p.codigo AS CODIGO_PRODUTO,
-        p.descricao AS DESCRICAO_PRODUTO,
+        t.ID_PRODUTO AS IDPRODUTO,
+        t.ID_ENTRADA_ORIGEM AS IDENTRADAORIGEM,
+        p.codigo AS CODIGOPRODUTO,
+        p.descricao AS DESCRICAOPRODUTO,
         COALESCE(t.UNIDADE, p.unidade, 'UN') AS UNIDADE,
-        t.ID_LOCAL_ORIGEM,
-        COALESCE(loa.NOME, lot.NOME) AS LOCAL_ORIGEM,
-        t.ID_LOCAL_DESTINO,
-        ld.NOME AS LOCAL_DESTINO,
+        t.ID_LOCAL_ORIGEM AS IDLOCALORIGEM,
+        COALESCE(loa.NOME, lot.NOME) AS LOCALORIGEM,
+        t.ID_LOCAL_DESTINO AS IDLOCALDESTINO,
+        ld.NOME AS LOCALDESTINO,
         t.QUANTIDADE,
         t.OBSERVACAO,
-        t.TIPO_TRANSFERENCIA,
-        t.RESPONSAVEL_TRANSPORTE,
-        t.RESPONSAVEL_ENTREGA,
-        t.USUARIO_RECEBIMENTO,
-        t.DATA_HORA_RECEBIMENTO,
-        t.STATUS_TRANSFERENCIA,
-        t.USUARIO_CADASTRO,
-        t.DATA_CADASTRO,
-        t.USUARIO_ALTERACAO,
-        t.DATA_ALTERACAO
+        t.TIPO_TRANSFERENCIA AS TIPOTRANSFERENCIA,
+        t.RESPONSAVEL_TRANSPORTE AS RESPONSAVELTRANSPORTE,
+        t.RESPONSAVEL_ENTREGA AS RESPONSAVELENTREGA,
+        t.USUARIO_RECEBIMENTO AS USUARIORECEBIMENTO,
+        t.DATA_HORA_RECEBIMENTO AS DATAHORARECEBIMENTO,
+        t.STATUS_TRANSFERENCIA AS STATUSTRANSFERENCIA,
+        t.USUARIO_CADASTRO AS USUARIOCADASTRO,
+        t.DATA_CADASTRO AS DATACADASTRO,
+        t.USUARIO_ALTERACAO AS USUARIOALTERACAO,
+        t.DATA_ALTERACAO AS DATAALTERACAO
       FROM SF_ESTOQUE_TRANSFERENCIA t
       INNER JOIN SF_PRODUTOS p
         ON p.id = t.ID_PRODUTO
@@ -5592,20 +5592,25 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
     const [items] = await conn.query(
       `
       SELECT
-        p.id AS ID_PRODUTO,
-        p.codigo AS CODIGO_PRODUTO,
-        p.descricao AS DESCRICAO_PRODUTO,
+        p.id AS IDPRODUTO,
+        p.codigo AS CODIGOPRODUTO,
+        p.descricao AS DESCRICAOPRODUTO,
         COALESCE(p.unidade, 'UN') AS UNIDADE,
-        centro.ID AS ID_LOCAL_DESTINO,
-        centro.NOME AS LOCAL_DESTINO,
-        COALESCE(rec.qtd_recebida, 0) AS QTD_RECEBIDA,
-        COALESCE(env.qtd_enviada, 0) AS QTD_ENVIADA,
-        COALESCE(pend.qtd_transferida_nao_recebida, 0) AS QTD_TRANSFERIDA_NAO_RECEBIDA,
+
+        centro.ID AS IDLOCALDESTINO,
+        centro.NOME AS LOCALDESTINO,
+
+        COALESCE(rec.qtd_recebida, 0) AS QTDRECEBIDA,
+        COALESCE(env.qtd_enviada, 0) AS QTDENVIADA,
+        COALESCE(pend.qtd_transferida_nao_recebida, 0) AS QTDTRANSFERIDANAORECEBIDA,
+
         CASE
           WHEN COALESCE(rec.qtd_recebida, 0) - COALESCE(env.qtd_enviada, 0) < 0 THEN 0
           ELSE COALESCE(rec.qtd_recebida, 0) - COALESCE(env.qtd_enviada, 0)
         END AS QUANTIDADE
+
       FROM SF_PRODUTOS p
+
       LEFT JOIN (
         SELECT
           t.ID_PRODUTO,
@@ -5615,6 +5620,7 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
           AND UPPER(TRIM(COALESCE(t.STATUS_TRANSFERENCIA, ''))) = 'RECEBIDO'
         GROUP BY t.ID_PRODUTO
       ) rec ON rec.ID_PRODUTO = p.id
+
       LEFT JOIN (
         SELECT
           t.ID_PRODUTO,
@@ -5624,6 +5630,7 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
           AND UPPER(TRIM(COALESCE(t.STATUS_TRANSFERENCIA, ''))) IN ('AGUARDANDO_RECEBIMENTO', 'EM_TRANSITO', 'RECEBIDO')
         GROUP BY t.ID_PRODUTO
       ) env ON env.ID_PRODUTO = p.id
+
       LEFT JOIN (
         SELECT
           t.ID_PRODUTO,
@@ -5633,17 +5640,20 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
           AND UPPER(TRIM(COALESCE(t.STATUS_TRANSFERENCIA, ''))) IN ('AGUARDANDO_RECEBIMENTO', 'EM_TRANSITO')
         GROUP BY t.ID_PRODUTO
       ) pend ON pend.ID_PRODUTO = p.id
+
       CROSS JOIN (
         SELECT ID, NOME
         FROM SF_CENTRO_CUSTO
         WHERE ID = ?
       ) centro
+
       WHERE EXISTS (
         SELECT 1
         FROM SF_ESTOQUE_TRANSFERENCIA t
         WHERE t.ID_PRODUTO = p.id
           AND (t.ID_LOCAL_DESTINO = ? OR t.ID_LOCAL_ORIGEM = ?)
       )
+
       ORDER BY p.codigo ASC, p.descricao ASC
       `,
       [centro.ID, centro.ID, centro.ID, centro.ID, centro.ID, centro.ID]
@@ -5652,7 +5662,11 @@ app.get('/api/estoque/centro-custo', async (req, res) => {
     return res.json({
       success: true,
       usuario,
+      usuarioId: usuarioDb.ID,
+      usuarioNome: usuarioDb.nome,
       centroCusto: centroCustoUsuario,
+      centroCustoId: centro.ID,
+      centroCustoNome: centro.NOME,
       notificacoesPendentes,
       items
     });
