@@ -93,6 +93,40 @@ app.get('/debug', (req, res) => {
   });
 });
 
+function getEnv(name, required = true) {
+  const value = String(process.env[name] || '').trim();
+
+  if (required && !value) {
+    throw new Error(`Variável de ambiente obrigatória não configurada: ${name}`);
+  }
+
+  return value;
+}
+
+function getZApiConfig() {
+  const baseUrl = getEnv('ZAPI_BASE_URL');
+  const instanceId = getEnv('ZAPI_INSTANCE_ID');
+  const instanceToken = getEnv('ZAPI_INSTANCE_TOKEN');
+  const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
+
+  return {
+    baseUrl,
+    instanceId,
+    instanceToken,
+    clientToken
+  };
+}
+
+function getZApiSendTextUrl() {
+  const { baseUrl, instanceId, instanceToken } = getZApiConfig();
+  return `${baseUrl}/instances/${instanceId}/token/${instanceToken}/send-text`;
+}
+
+function getZApiStatusUrl() {
+  const { baseUrl, instanceId, instanceToken } = getZApiConfig();
+  return `${baseUrl}/instances/${instanceId}/token/${instanceToken}/status`;
+}
+
 // =====================
 // API Login
 // =====================
@@ -13716,6 +13750,32 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
 
 // notificação de tranferencia WhatsApp
 
+async function validarStatusInstanciaZApi() {
+  const { clientToken } = getZApiConfig();
+  const statusUrl = getZApiStatusUrl();
+
+  console.log('[ZAPI] Validando status da instância...');
+  console.log('[ZAPI] Status URL:', statusUrl);
+
+  const resp = await fetch(statusUrl, {
+    method: 'GET',
+    headers: {
+      ...(clientToken ? { 'Client-Token': clientToken } : {})
+    }
+  });
+
+  const data = await resp.json().catch(() => null);
+
+  console.log('[ZAPI] Status response code:', resp.status);
+  console.log('[ZAPI] Status response body:', data);
+
+  if (!resp.ok) {
+    throw new Error(data?.message || data?.error || `Erro ao consultar status da instância Z-API. HTTP ${resp.status}`);
+  }
+
+  return data;
+}
+
 function obterNomeCentroCustoDestino(localDestino) {
   return (
     localDestino?.CENTRO_CUSTO ||
@@ -13772,18 +13832,26 @@ function montarMensagemTransferenciaWhatsapp({
 }
 
 async function enviarWhatsAppZApi({ telefone, mensagem }) {
-  const endpoint = process.env.ZAPI_SEND_TEXT_URL;
-  const clientToken = process.env.ZAPI_CLIENT_TOKEN;
-
-  if (!endpoint) {
-    throw new Error('ZAPI_SEND_TEXT_URL não configurada.');
-  }
+  const { clientToken } = getZApiConfig();
+  const endpoint = getZApiSendTextUrl();
 
   const numero = normalizarNumeroWhatsAppBR(telefone);
 
   if (!numero) {
-    throw new Error('Número de WhatsApp inválido.');
+    throw new Error(`Número inválido para WhatsApp: ${telefone}`);
   }
+
+  const payload = {
+    phone: numero,
+    message: mensagem
+  };
+
+  console.log('[ZAPI] Enviando mensagem...');
+  console.log('[ZAPI] Endpoint:', endpoint);
+  console.log('[ZAPI] Instance ID:', process.env.ZAPI_INSTANCE_ID);
+  console.log('[ZAPI] Telefone original:', telefone);
+  console.log('[ZAPI] Telefone normalizado:', numero);
+  console.log('[ZAPI] Payload:', payload);
 
   const resp = await fetch(endpoint, {
     method: 'POST',
@@ -13791,16 +13859,16 @@ async function enviarWhatsAppZApi({ telefone, mensagem }) {
       'Content-Type': 'application/json',
       ...(clientToken ? { 'Client-Token': clientToken } : {})
     },
-    body: JSON.stringify({
-      phone: numero,
-      message: mensagem
-    })
+    body: JSON.stringify(payload)
   });
 
   const data = await resp.json().catch(() => null);
 
+  console.log('[ZAPI] Response code:', resp.status);
+  console.log('[ZAPI] Response body:', data);
+
   if (!resp.ok) {
-    throw new Error(data?.message || data?.error || 'Erro ao enviar WhatsApp pela Z-API.');
+    throw new Error(data?.message || data?.error || `Erro ao enviar mensagem via Z-API. HTTP ${resp.status}`);
   }
 
   return data;
