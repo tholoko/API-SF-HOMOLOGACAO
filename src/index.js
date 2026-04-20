@@ -133,15 +133,6 @@ app.get('/debug', (req, res) => {
   });
 });
 
-function getEnv(name, required = true) {
-  const value = String(process.env[name] || '').trim();
-
-  if (required && !value) {
-    throw new Error(`Variável de ambiente obrigatória não configurada: ${name}`);
-  }
-
-  return value;
-}
 
 
 
