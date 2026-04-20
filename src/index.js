@@ -729,6 +729,23 @@ app.post('/api/aniversariantes/enviar-hoje', async (req, res) => {
   }
 });
 
+app.get('/api/aniversariantes/testar-hoje', async (req, res) => {
+  try {
+    const resultado = await executarRotinaAniversariantes();
+
+    return res.json({
+      success: true,
+      message: 'Rotina de aniversariantes executada com sucesso.',
+      resultado
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao executar rotina de aniversariantes.',
+      error: err.message
+    });
+  }
+});
 
 
 // =====================
