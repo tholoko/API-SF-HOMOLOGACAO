@@ -358,17 +358,17 @@ function montarHtmlCardAniversario(usuario) {
         body {
           margin: 0;
           font-family: Arial, Helvetica, sans-serif;
-          background: #0b1f3a;
+          background: #ffffff;
         }
 
         .canvas {
           width: 1080px;
           height: 1350px;
-          padding: 42px;
+          padding: 40px;
           background:
-            radial-gradient(circle at top left, rgba(34, 197, 94, 0.16), transparent 26%),
-            radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.18), transparent 28%),
-            linear-gradient(135deg, #081a30 0%, #0b1f3a 50%, #12345b 100%);
+            radial-gradient(circle at top left, rgba(11, 31, 58, 0.05), transparent 28%),
+            radial-gradient(circle at bottom right, rgba(22, 163, 74, 0.08), transparent 28%),
+            linear-gradient(180deg, #ffffff 0%, #f7fbff 55%, #f4fbf6 100%);
         }
 
         .card {
@@ -376,96 +376,144 @@ function montarHtmlCardAniversario(usuario) {
           height: 100%;
           border-radius: 34px;
           overflow: hidden;
-          background: linear-gradient(180deg, #ffffff 0%, #f6fbf8 100%);
-          box-shadow: 0 30px 80px rgba(2, 12, 27, 0.28);
-          border: 1px solid rgba(255, 255, 255, 0.10);
+          background: linear-gradient(180deg, #ffffff 0%, #f8fbff 65%, #f5fbf7 100%);
+          box-shadow: 0 24px 70px rgba(11, 31, 58, 0.10);
+          border: 1px solid #e5edf5;
+          display: flex;
+          flex-direction: column;
+          position: relative;
+        }
+
+        .balloon {
+          position: absolute;
+          border-radius: 50%;
+          z-index: 0;
+          opacity: 0.9;
+        }
+
+        .balloon::after {
+          content: '';
+          position: absolute;
+          width: 2px;
+          height: 95px;
+          background: rgba(148, 163, 184, 0.45);
+          left: 50%;
+          top: calc(100% - 4px);
+          transform: translateX(-50%);
+        }
+
+        .balloon-1 {
+          width: 130px;
+          height: 155px;
+          top: 95px;
+          left: 38px;
+          background: radial-gradient(circle at 30% 30%, #dbeafe 0%, #93c5fd 45%, #2563eb 100%);
+          box-shadow: inset -12px -16px 24px rgba(11, 31, 58, 0.12);
+        }
+
+        .balloon-2 {
+          width: 110px;
+          height: 135px;
+          top: 210px;
+          right: 58px;
+          background: radial-gradient(circle at 30% 30%, #dcfce7 0%, #86efac 45%, #16a34a 100%);
+          box-shadow: inset -12px -16px 24px rgba(20, 83, 45, 0.12);
+        }
+
+        .balloon-3 {
+          width: 88px;
+          height: 108px;
+          bottom: 220px;
+          left: 78px;
+          background: radial-gradient(circle at 30% 30%, #e0f2fe 0%, #7dd3fc 45%, #0284c7 100%);
+          box-shadow: inset -10px -14px 18px rgba(8, 47, 73, 0.12);
+        }
+
+        .balloon-4 {
+          width: 95px;
+          height: 118px;
+          bottom: 260px;
+          right: 110px;
+          background: radial-gradient(circle at 30% 30%, #dcfce7 0%, #4ade80 48%, #15803d 100%);
+          box-shadow: inset -10px -14px 18px rgba(20, 83, 45, 0.12);
+        }
+
+        .balloon-5 {
+          width: 58px;
+          height: 72px;
+          top: 360px;
+          right: 180px;
+          background: radial-gradient(circle at 30% 30%, #eff6ff 0%, #bfdbfe 50%, #3b82f6 100%);
+          box-shadow: inset -8px -10px 14px rgba(30, 64, 175, 0.10);
+        }
+
+        .content-wrap {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          height: 100%;
           display: flex;
           flex-direction: column;
         }
 
         .header {
-          padding: 38px 44px 28px;
-          background: linear-gradient(135deg, #0b1f3a 0%, #12345b 60%, #0f5132 100%);
-          color: #ffffff;
-        }
-
-        .logos {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 24px;
-          margin-bottom: 30px;
-        }
-
-        .logo-box {
-          background: rgba(255, 255, 255, 0.10);
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          border-radius: 20px;
-          padding: 14px 18px;
-          height: 88px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .logo-box img {
-          display: block;
-          max-height: 56px;
-          max-width: 280px;
-          width: auto;
-          height: auto;
-          object-fit: contain;
+          padding: 54px 56px 26px;
+          background: transparent;
+          color: #0b1f3a;
+          text-align: center;
         }
 
         .tag {
           display: inline-block;
-          padding: 10px 20px;
+          padding: 10px 22px;
           border-radius: 999px;
-          background: rgba(34, 197, 94, 0.18);
-          border: 1px solid rgba(34, 197, 94, 0.34);
-          color: #d1fae5;
+          background: #eaf3ff;
+          border: 1px solid #d7e6f7;
+          color: #0f5132;
           font-size: 22px;
           font-weight: 800;
           letter-spacing: 1px;
-          margin-bottom: 20px;
+          margin-bottom: 22px;
           text-transform: uppercase;
         }
 
         .titulo {
           margin: 0;
-          font-size: 64px;
+          font-size: 66px;
           line-height: 1.06;
           font-weight: 800;
           letter-spacing: -1px;
+          color: #0b1f3a;
         }
 
         .subtitulo {
-          margin: 16px 0 0;
+          margin: 18px 0 0;
           font-size: 28px;
           line-height: 1.5;
-          color: rgba(255, 255, 255, 0.92);
+          color: #334155;
         }
 
         .content {
           flex: 1;
-          padding: 42px 44px 44px;
+          padding: 20px 56px 30px;
           display: flex;
           flex-direction: column;
-          gap: 24px;
           justify-content: center;
+          gap: 24px;
         }
 
         .nome-box {
-          background: linear-gradient(135deg, #ecfdf5 0%, #eff6ff 100%);
-          border: 1px solid #ccebd8;
+          background: linear-gradient(135deg, #eff6ff 0%, #ecfdf5 100%);
+          border: 1px solid #d9e8f4;
           border-radius: 28px;
-          padding: 28px 30px;
+          padding: 30px 32px;
           text-align: center;
+          backdrop-filter: blur(1px);
         }
 
         .nome-label {
           font-size: 20px;
-          color: #4b5563;
+          color: #64748b;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: .8px;
@@ -481,14 +529,15 @@ function montarHtmlCardAniversario(usuario) {
         }
 
         .mensagem {
-          background: #f8fafc;
-          border-left: 8px solid #16a34a;
+          background: rgba(255, 255, 255, 0.92);
+          border: 1px solid #dce7f1;
           border-radius: 24px;
           padding: 28px 30px;
           font-size: 30px;
-          line-height: 1.55;
+          line-height: 1.6;
           color: #1f2937;
           font-weight: 500;
+          box-shadow: 0 10px 30px rgba(11, 31, 58, 0.04);
         }
 
         .mensagem strong {
@@ -502,11 +551,10 @@ function montarHtmlCardAniversario(usuario) {
         }
 
         .info {
-          background: #ffffff;
-          border: 1px solid #dbe5ef;
+          background: rgba(255, 255, 255, 0.96);
+          border: 1px solid #dce7f1;
           border-radius: 22px;
           padding: 22px 24px;
-          box-shadow: 0 10px 24px rgba(11, 31, 58, 0.05);
         }
 
         .label {
@@ -527,85 +575,132 @@ function montarHtmlCardAniversario(usuario) {
         }
 
         .footer {
-          padding: 26px 44px 34px;
-          background: #f0fdf4;
-          border-top: 1px solid #d9efe0;
-          text-align: center;
+          margin-top: auto;
+          padding: 24px 56px 34px;
+          border-top: 1px solid #e5edf5;
+          background: transparent;
         }
 
         .footer-texto {
-          font-size: 24px;
+          text-align: center;
+          font-size: 23px;
           line-height: 1.6;
-          color: #14532d;
+          color: #166534;
           font-weight: 600;
+          margin-bottom: 24px;
         }
 
         .footer-texto strong {
           color: #0b1f3a;
+        }
+
+        .logos-footer {
+          display: flex;
+          justify-content: center;
+          align-items: stretch;
+          gap: 18px;
+        }
+
+        .logo-slot {
+          width: 320px;
+          height: 110px;
+          border-radius: 22px;
+          border: 1px solid #dbe7f1;
+          background: rgba(255, 255, 255, 0.96);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 14px 18px;
+        }
+
+        .logo-slot img {
+          display: block;
+          width: auto;
+          height: auto;
+          object-fit: contain;
+          max-width: 100%;
+        }
+
+        .logo-slot.logo-esquerda img {
+          max-width: 240px;
+          max-height: 52px;
+        }
+
+        .logo-slot.logo-direita img {
+          max-width: 255px;
+          max-height: 60px;
         }
       </style>
     </head>
     <body>
       <div class="canvas">
         <div class="card">
-          <div class="header">
-            <div class="logos">
-              <div class="logo-box">
-                <img
-                  src="${logoSementes}"
-                  alt="Logo Sementes"
-                  width="260"
-                  height="56"
-                />
-              </div>
+          <div class="balloon balloon-1"></div>
+          <div class="balloon balloon-2"></div>
+          <div class="balloon balloon-3"></div>
+          <div class="balloon balloon-4"></div>
+          <div class="balloon balloon-5"></div>
 
-              <div class="logo-box">
-                <img
-                  src="${logoSociedade}"
-                  alt="Logo Sociedade Franciosi"
-                  width="260"
-                  height="56"
-                />
-              </div>
+          <div class="content-wrap">
+            <div class="header">
+              <div class="tag">Mensagem Especial</div>
+              <h1 class="titulo">Feliz Aniversário!</h1>
+              <p class="subtitulo">
+                Hoje celebramos uma data especial com reconhecimento, carinho e gratidão.
+              </p>
             </div>
 
-            <div class="tag">Mensagem Especial</div>
-            <h1 class="titulo">Feliz Aniversário!</h1>
-            <p class="subtitulo">
-              Hoje celebramos uma data especial e registramos com carinho este momento.
-            </p>
-          </div>
-
-          <div class="content">
-            <div class="nome-box">
-              <div class="nome-label">Homenagem para</div>
-              <div class="nome">${escapeHtml(nome)}</div>
-            </div>
-
-            <div class="mensagem">
-              A <strong>Sociedade Franciosi</strong> cumprimenta você pelo seu aniversário e deseja
-              um novo ciclo repleto de <strong>saúde</strong>, <strong>paz</strong>,
-              <strong>realizações</strong> e muito <strong>sucesso</strong>.
-              Que esta nova etapa seja marcada por conquistas, alegria e prosperidade.
-            </div>
-
-            <div class="grid">
-              <div class="info">
-                <div class="label">Setor</div>
-                <div class="valor">${escapeHtml(setor)}</div>
+            <div class="content">
+              <div class="nome-box">
+                <div class="nome-label">Homenagem para</div>
+                <div class="nome">${escapeHtml(nome)}</div>
               </div>
 
-              <div class="info">
-                <div class="label">Local de trabalho</div>
-                <div class="valor">${escapeHtml(local)}</div>
+              <div class="mensagem">
+                A <strong>Sociedade Franciosi</strong> cumprimenta você pelo seu aniversário e deseja
+                um novo ciclo de muita <strong>saúde</strong>, <strong>paz</strong>,
+                <strong>prosperidade</strong> e <strong>realizações</strong>.
+                Receba nossa consideração e os votos de um dia muito especial.
+              </div>
+
+              <div class="grid">
+                <div class="info">
+                  <div class="label">Setor</div>
+                  <div class="valor">${escapeHtml(setor)}</div>
+                </div>
+
+                <div class="info">
+                  <div class="label">Local de trabalho</div>
+                  <div class="valor">${escapeHtml(local)}</div>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="footer">
-            <div class="footer-texto">
-              Com consideração e estima,<br />
-              <strong>Sociedade Franciosi</strong>
+            <div class="footer">
+              <div class="footer-texto">
+                Com estima e reconhecimento,<br />
+                <strong>Sociedade Franciosi</strong>
+              </div>
+
+              <div class="logos-footer">
+                <div class="logo-slot logo-esquerda">
+                  <img
+                    src="${logoSementes}"
+                    alt="Logo Sementes"
+                    width="240"
+                    height="52"
+                  />
+                </div>
+
+                <div class="logo-slot logo-direita">
+                  <img
+                    src="${logoSociedade}"
+                    alt="Logo Sociedade Franciosi"
+                    width="255"
+                    height="60"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
