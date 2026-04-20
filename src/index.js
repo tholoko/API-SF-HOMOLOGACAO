@@ -13816,20 +13816,35 @@ function montarMensagemTransferenciaWhatsapp({
   tipoTransferencia,
   observacao
 }) {
-  return [
-    acao === 'EDICAO' ? '🔄 Transferência atualizada' : '📦 Nova transferência registrada',
-    '',
-    codigo ? `Código: ${codigo}` : null,
-    `Material: ${descricao || 'Material não informado'}`,
-    `Quantidade: ${quantidade} ${unidade || 'UN'}`,
-    localOrigem ? `Origem: ${localOrigem}` : null,
-    localDestino ? `Destino: ${localDestino}` : null,
-    centroCusto ? `Centro de custo: ${centroCusto}` : null,
-    tipoTransferencia ? `Tipo: ${tipoTransferencia}` : null,
-    `Usuário: ${usuario || 'SISTEMA'}`,
-    observacao ? `Observação: ${observacao}` : null
-  ].filter(Boolean).join('\n');
+  const titulo = acao === 'EDICAO'
+    ? '🔄 *TRANSFERÊNCIA ATUALIZADA*'
+    : '📦 *NOVA TRANSFERÊNCIA REGISTRADA*';
+
+  const tipoTexto =
+    tipoTransferencia === 'EXTERNA'
+      ? '🚚 Externa'
+      : '🏢 Local';
+
+  const linhas = [
+    titulo,
+    '━━━━━━━━━━━━━━━━━━',
+    codigo ? `🔖 *Código:* ${codigo}` : null,
+    `📋 *Material:* ${descricao || 'Material não informado'}`,
+    `📦 *Quantidade:* ${quantidade} ${unidade || 'UN'}`,
+    localOrigem ? `📍 *Origem:* ${localOrigem}` : null,
+    localDestino ? `🏁 *Destino:* ${localDestino}` : null,
+    centroCusto ? `🏢 *Centro de custo:* ${centroCusto}` : null,
+    `🔁 *Tipo:* ${tipoTexto}`,
+    `👤 *Usuário:* ${usuario || 'SISTEMA'}`,
+    observacao ? `📝 *Observação:* ${observacao}` : null,
+    '━━━━━━━━━━━━━━━━━━',
+    '✅ _Mensagem automática do sistema de estoque._'
+  ];
+
+  return linhas.filter(Boolean).join('\n');
 }
+
+
 
 async function enviarWhatsAppZApi({ telefone, mensagem }) {
   const { clientToken } = getZApiConfig();
