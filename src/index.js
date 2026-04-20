@@ -5251,7 +5251,6 @@ app.post('/api/estoque/transferencias/:id/recebimento', async (req, res) => {
       transferencia.LOCAL_DESTINO_NOME ?? ''
     ).trim().toUpperCase();
 
-    console.log(centroCustoUsuario, localDestinoNome)
 
     if (!centroCustoUsuario || centroCustoUsuario !== localDestinoNome) {
       await conn.rollback();
