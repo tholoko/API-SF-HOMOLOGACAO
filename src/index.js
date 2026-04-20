@@ -5244,7 +5244,7 @@ app.post('/api/estoque/transferencias/:id/recebimento', async (req, res) => {
     }
 
     const centroCustoUsuario = String(
-      usuarioDb.LOCAL_TRABALHO ?? usuarioDb.LOCAL_TRABALHO ?? ''
+      usuarioDb.CENTRO_CUSTO ?? usuarioDb.CENTRO_CUSTO ?? ''
     ).trim().toUpperCase();
 
     const localDestinoNome = String(
