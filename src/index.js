@@ -343,6 +343,9 @@ function montarHtmlCardAniversario(usuario) {
   const setor = usuario?.SETOR || 'Setor não informado';
   const local = usuario?.LOCAL_TRABALHO || 'Local não informado';
 
+  const logoSementes = 'https://sf-link-copy.up.railway.app/anexos/marketing/Logo%20Sementes-1775074662246-36db3a313b0ed.png';
+  const logoSociedade = 'https://sf-link-copy.up.railway.app/anexos/marketing/Logo%20Sociedade-1774616271956-ca397ee063a7b.png';
+
   return `
   <!DOCTYPE html>
   <html lang="pt-BR">
@@ -351,91 +354,118 @@ function montarHtmlCardAniversario(usuario) {
       <title>Feliz Aniversário</title>
       <style>
         * { box-sizing: border-box; }
+
         body {
           margin: 0;
           font-family: Arial, Helvetica, sans-serif;
-          background: linear-gradient(135deg, #f8fafc 0%, #e0f2fe 100%);
+          background: #0b1f3a;
         }
 
         .canvas {
           width: 1080px;
           height: 1350px;
-          padding: 48px;
+          padding: 42px;
           background:
-            radial-gradient(circle at top left, rgba(236, 72, 153, 0.18), transparent 24%),
-            radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.18), transparent 24%),
-            linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #fff7ed 100%);
+            radial-gradient(circle at top left, rgba(34, 197, 94, 0.16), transparent 26%),
+            radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.18), transparent 28%),
+            linear-gradient(135deg, #081a30 0%, #0b1f3a 50%, #12345b 100%);
         }
 
         .card {
           width: 100%;
           height: 100%;
-          border-radius: 36px;
+          border-radius: 34px;
           overflow: hidden;
-          background: #ffffff;
-          box-shadow: 0 30px 80px rgba(15, 23, 42, 0.14);
-          border: 1px solid #e5e7eb;
+          background: linear-gradient(180deg, #ffffff 0%, #f6fbf8 100%);
+          box-shadow: 0 30px 80px rgba(2, 12, 27, 0.28);
+          border: 1px solid rgba(255, 255, 255, 0.10);
           display: flex;
           flex-direction: column;
         }
 
         .header {
-          padding: 56px 56px 32px;
-          background: linear-gradient(135deg, #ec4899 0%, #7c3aed 45%, #2563eb 100%);
+          padding: 38px 44px 28px;
+          background: linear-gradient(135deg, #0b1f3a 0%, #12345b 60%, #0f5132 100%);
           color: #ffffff;
-          text-align: center;
         }
 
-        .emoji {
-          font-size: 72px;
-          margin-bottom: 18px;
+        .logos {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 24px;
+          margin-bottom: 30px;
+        }
+
+        .logo-box {
+          background: rgba(255, 255, 255, 0.10);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 20px;
+          padding: 14px 18px;
+          height: 88px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .logo-box img {
+          display: block;
+          max-height: 56px;
+          max-width: 280px;
+          width: auto;
+          height: auto;
+          object-fit: contain;
         }
 
         .tag {
           display: inline-block;
-          padding: 10px 22px;
+          padding: 10px 20px;
           border-radius: 999px;
-          background: rgba(255,255,255,0.18);
-          font-size: 24px;
-          font-weight: 700;
+          background: rgba(34, 197, 94, 0.18);
+          border: 1px solid rgba(34, 197, 94, 0.34);
+          color: #d1fae5;
+          font-size: 22px;
+          font-weight: 800;
           letter-spacing: 1px;
-          margin-bottom: 22px;
+          margin-bottom: 20px;
+          text-transform: uppercase;
         }
 
         .titulo {
           margin: 0;
-          font-size: 68px;
-          line-height: 1.05;
+          font-size: 64px;
+          line-height: 1.06;
           font-weight: 800;
+          letter-spacing: -1px;
         }
 
         .subtitulo {
-          margin: 20px 0 0;
+          margin: 16px 0 0;
           font-size: 28px;
           line-height: 1.5;
-          opacity: .96;
+          color: rgba(255, 255, 255, 0.92);
         }
 
         .content {
           flex: 1;
-          padding: 46px 56px 56px;
+          padding: 42px 44px 44px;
           display: flex;
           flex-direction: column;
-          justify-content: center;
           gap: 24px;
+          justify-content: center;
         }
 
         .nome-box {
-          background: linear-gradient(135deg, #fff1f2 0%, #eef2ff 100%);
-          border: 1px solid #e9d5ff;
-          border-radius: 30px;
-          padding: 30px 32px;
+          background: linear-gradient(135deg, #ecfdf5 0%, #eff6ff 100%);
+          border: 1px solid #ccebd8;
+          border-radius: 28px;
+          padding: 28px 30px;
           text-align: center;
         }
 
         .nome-label {
-          font-size: 22px;
-          color: #6b7280;
+          font-size: 20px;
+          color: #4b5563;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: .8px;
@@ -443,23 +473,26 @@ function montarHtmlCardAniversario(usuario) {
         }
 
         .nome {
-          font-size: 56px;
+          font-size: 54px;
           line-height: 1.15;
-          color: #111827;
+          color: #0b1f3a;
           font-weight: 800;
           word-break: break-word;
         }
 
         .mensagem {
           background: #f8fafc;
-          border: 1px solid #e5e7eb;
-          border-radius: 28px;
+          border-left: 8px solid #16a34a;
+          border-radius: 24px;
           padding: 28px 30px;
-          font-size: 34px;
-          line-height: 1.5;
+          font-size: 30px;
+          line-height: 1.55;
           color: #1f2937;
-          text-align: center;
-          font-weight: 600;
+          font-weight: 500;
+        }
+
+        .mensagem strong {
+          color: #0b1f3a;
         }
 
         .grid {
@@ -470,13 +503,14 @@ function montarHtmlCardAniversario(usuario) {
 
         .info {
           background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 24px;
+          border: 1px solid #dbe5ef;
+          border-radius: 22px;
           padding: 22px 24px;
+          box-shadow: 0 10px 24px rgba(11, 31, 58, 0.05);
         }
 
         .label {
-          font-size: 18px;
+          font-size: 17px;
           text-transform: uppercase;
           letter-spacing: .8px;
           color: #6b7280;
@@ -485,23 +519,29 @@ function montarHtmlCardAniversario(usuario) {
         }
 
         .valor {
-          font-size: 30px;
+          font-size: 29px;
           line-height: 1.35;
-          color: #111827;
+          color: #0f172a;
           font-weight: 700;
           word-break: break-word;
         }
 
-        .rodape {
-          padding: 28px 56px 40px;
+        .footer {
+          padding: 26px 44px 34px;
+          background: #f0fdf4;
+          border-top: 1px solid #d9efe0;
           text-align: center;
-          font-size: 24px;
-          color: #6b7280;
-          border-top: 1px solid #e5e7eb;
         }
 
-        .rodape strong {
-          color: #ec4899;
+        .footer-texto {
+          font-size: 24px;
+          line-height: 1.6;
+          color: #14532d;
+          font-weight: 600;
+        }
+
+        .footer-texto strong {
+          color: #0b1f3a;
         }
       </style>
     </head>
@@ -509,20 +549,44 @@ function montarHtmlCardAniversario(usuario) {
       <div class="canvas">
         <div class="card">
           <div class="header">
-            <div class="emoji">🎉🎂✨</div>
-            <div class="tag">ANIVERSARIANTE DO DIA</div>
+            <div class="logos">
+              <div class="logo-box">
+                <img
+                  src="${logoSementes}"
+                  alt="Logo Sementes"
+                  width="260"
+                  height="56"
+                />
+              </div>
+
+              <div class="logo-box">
+                <img
+                  src="${logoSociedade}"
+                  alt="Logo Sociedade Franciosi"
+                  width="260"
+                  height="56"
+                />
+              </div>
+            </div>
+
+            <div class="tag">Mensagem Especial</div>
             <h1 class="titulo">Feliz Aniversário!</h1>
-            <p class="subtitulo">Hoje é um dia especial e queremos celebrar com você.</p>
+            <p class="subtitulo">
+              Hoje celebramos uma data especial e registramos com carinho este momento.
+            </p>
           </div>
 
           <div class="content">
             <div class="nome-box">
-              <div class="nome-label">Parabéns para</div>
+              <div class="nome-label">Homenagem para</div>
               <div class="nome">${escapeHtml(nome)}</div>
             </div>
 
             <div class="mensagem">
-              Desejamos muita saúde, paz, alegria, sucesso e muitas realizações em sua vida! 🥳
+              A <strong>Sociedade Franciosi</strong> cumprimenta você pelo seu aniversário e deseja
+              um novo ciclo repleto de <strong>saúde</strong>, <strong>paz</strong>,
+              <strong>realizações</strong> e muito <strong>sucesso</strong>.
+              Que esta nova etapa seja marcada por conquistas, alegria e prosperidade.
             </div>
 
             <div class="grid">
@@ -538,8 +602,11 @@ function montarHtmlCardAniversario(usuario) {
             </div>
           </div>
 
-          <div class="rodape">
-            Com carinho, <strong>Sociedade Franciosi</strong>
+          <div class="footer">
+            <div class="footer-texto">
+              Com consideração e estima,<br />
+              <strong>Sociedade Franciosi</strong>
+            </div>
           </div>
         </div>
       </div>
