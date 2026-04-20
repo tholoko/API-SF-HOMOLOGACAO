@@ -28,6 +28,7 @@
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.1",
+    "puppeteer": "^24.42.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

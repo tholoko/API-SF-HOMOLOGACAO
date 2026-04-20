@@ -2,18 +2,58 @@ import express from 'express';
 import cors from 'cors';
 import { pool } from './db.js';
 import dotenv from 'dotenv';
-import dns from "node:dns";
+import dns from 'node:dns';
 import bcrypt from 'bcryptjs';
-import { titleCaseNome, normalizarEmail, somenteNumeros } from './utils.js';
 import crypto from 'node:crypto';
-
-import fs from "node:fs";
-import path from "node:path";
-import multer from "multer";
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import multer from 'multer';
 import fetch from 'node-fetch';
 import cron from 'node-cron';
-
 import XLSX from 'xlsx';
+import puppeteer from 'puppeteer';
+
+import { titleCaseNome, normalizarEmail, somenteNumeros } from './utils.js';
+
+function getEnv(name, required = true) {
+  const value = String(process.env[name] || '').trim();
+
+  if (required && !value) {
+    throw new Error(`Variável de ambiente obrigatória não configurada: ${name}`);
+  }
+
+  return value;
+}
+
+function getZApiConfig() {
+  const baseUrl = getEnv('ZAPI_BASE_URL');
+  const instanceId = getEnv('ZAPI_INSTANCE_ID');
+  const instanceToken = getEnv('ZAPI_INSTANCE_TOKEN');
+  const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
+
+  return {
+    baseUrl,
+    instanceId,
+    instanceToken,
+    clientToken
+  };
+}
+
+function getZApiSendTextUrl() {
+  const { baseUrl, instanceId, instanceToken } = getZApiConfig();
+  return `${baseUrl}/instances/${instanceId}/token/${instanceToken}/send-text`;
+}
+
+function getZApiSendImageUrl() {
+  const { baseUrl, instanceId, instanceToken } = getZApiConfig();
+  return `${baseUrl}/instances/${instanceId}/token/${instanceToken}/send-image`;
+}
+
+function getZApiStatusUrl() {
+  const { baseUrl, instanceId, instanceToken } = getZApiConfig();
+  return `${baseUrl}/instances/${instanceId}/token/${instanceToken}/status`;
+}
 
 dns.setDefaultResultOrder("ipv4first");
 dotenv.config();
@@ -103,29 +143,7 @@ function getEnv(name, required = true) {
   return value;
 }
 
-function getZApiConfig() {
-  const baseUrl = getEnv('ZAPI_BASE_URL');
-  const instanceId = getEnv('ZAPI_INSTANCE_ID');
-  const instanceToken = getEnv('ZAPI_INSTANCE_TOKEN');
-  const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
 
-  return {
-    baseUrl,
-    instanceId,
-    instanceToken,
-    clientToken
-  };
-}
-
-function getZApiSendTextUrl() {
-  const { baseUrl, instanceId, instanceToken } = getZApiConfig();
-  return `${baseUrl}/instances/${instanceId}/token/${instanceToken}/send-text`;
-}
-
-function getZApiStatusUrl() {
-  const { baseUrl, instanceId, instanceToken } = getZApiConfig();
-  return `${baseUrl}/instances/${instanceId}/token/${instanceToken}/status`;
-}
 
 // =====================
 // API Login
@@ -4678,412 +4696,6 @@ app.get('/api/estoque/transferencias', async (req, res) => {
   }
 });
 
-app.post('/api/estoque/transferencias', async (req, res) => {
-  let conn;
-
-  try {
-    const idProduto = Number(req.body.idProduto);
-    const idLocalOrigem = Number(req.body.idLocalOrigem);
-    const idLocalDestino = Number(req.body.idLocalDestino);
-    const quantidade = parseDecimal(req.body.quantidade);
-    const unidade = textolivreTr(req.body.unidade, 10);
-    const observacao = textolivreTr(req.body.observacao, 255);
-    const usuario = textolivreTr(req.body.usuario, 150) || 'SISTEMA';
-
-    const tipoTransferencia = textolivreTr(req.body.tipoTransferencia, 20).toUpperCase();
-    const responsavelTransporte = textolivreTr(req.body.responsavelTransporte, 150);
-    const responsavelEntrega = textolivreTr(req.body.responsavelEntrega, 150);
-
-    if (!idProduto || !idLocalOrigem || !idLocalDestino) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe idProduto, idLocalOrigem e idLocalDestino.'
-      });
-    }
-
-    if (!['LOCAL', 'EXTERNA'].includes(tipoTransferencia)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe um tipo de transferência válido: LOCAL ou EXTERNA.'
-      });
-    }
-
-    if (tipoTransferencia === 'EXTERNA' && (!responsavelTransporte || !responsavelEntrega)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe quem levará o material e para quem será entregue.'
-      });
-    }
-
-    if (idLocalOrigem === idLocalDestino) {
-      return res.status(400).json({
-        success: false,
-        message: 'O local de destino deve ser diferente do local de origem.'
-      });
-    }
-
-    if (!(quantidade > 0)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe uma quantidade válida para transferência.'
-      });
-    }
-
-    conn = await pool.getConnection();
-    await conn.beginTransaction();
-
-    const produto = await validarProdutoSistema(conn, idProduto);
-    if (!produto) {
-      await conn.rollback();
-      return res.status(404).json({ success: false, message: 'Produto não encontrado na SF_PRODUTOS.' });
-    }
-
-    if (Number(produto.ativo ?? 1) !== 1) {
-      await conn.rollback();
-      return res.status(400).json({ success: false, message: 'O produto informado está inativo.' });
-    }
-
-    const localOrigem = await validarLocalAlmoxarifado(conn, idLocalOrigem);
-    if (!localOrigem) {
-      await conn.rollback();
-      return res.status(404).json({ success: false, message: 'Local de origem não encontrado.' });
-    }
-
-    const localDestino = await validarLocalCentrocusto(conn, idLocalDestino);
-    if (!localDestino) {
-      await conn.rollback();
-      return res.status(404).json({ success: false, message: 'Local de destino não encontrado.' });
-    }
-
-    const [rowsEntradaOrigem] = await conn.query(
-      `
-      SELECT pe.id, pe.unidade_nf, pe.ID_LOCAL_ALMOXARIFADO
-      FROM SF_PRODUTO_ENTRADA pe
-      WHERE pe.produto_sistema_id = ?
-        AND pe.ID_LOCAL_ALMOXARIFADO = ?
-      ORDER BY pe.id ASC
-      LIMIT 1
-      `,
-      [idProduto, idLocalOrigem]
-    );
-
-    const entradaOrigem = rowsEntradaOrigem[0] || null;
-    if (!entradaOrigem) {
-      await conn.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Não existe entrada desse produto nesse local para transferir.'
-      });
-    }
-
-    const saldoInfo = await obterSaldoTransferivel(conn, idProduto, idLocalOrigem);
-    const saldoAntes = saldoInfo.saldo;
-
-    if (quantidade > saldoAntes) {
-      await conn.rollback();
-      return res.status(400).json({
-        success: false,
-        message: `Quantidade excede o saldo disponível (${saldoAntes}).`
-      });
-    }
-
-    const statusTransferencia =
-      tipoTransferencia === 'LOCAL'
-        ? 'AGUARDANDO_RECEBIMENTO'
-        : 'EM_TRANSITO';
-
-    const [result] = await conn.query(
-      `
-      INSERT INTO SF_ESTOQUE_TRANSFERENCIA
-        (
-          ID_PRODUTO,
-          ID_ENTRADA_ORIGEM,
-          ID_LOCAL_ORIGEM,
-          ID_LOCAL_DESTINO,
-          QUANTIDADE,
-          UNIDADE,
-          OBSERVACAO,
-          TIPO_TRANSFERENCIA,
-          RESPONSAVEL_TRANSPORTE,
-          RESPONSAVEL_ENTREGA,
-          STATUS_TRANSFERENCIA,
-          USUARIO_CADASTRO
-        )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        idProduto,
-        Number(entradaOrigem.id),
-        idLocalOrigem,
-        idLocalDestino,
-        quantidade,
-        unidade || produto.unidade || entradaOrigem.unidade_nf || null,
-        observacao || null,
-        tipoTransferencia,
-        tipoTransferencia === 'EXTERNA' ? responsavelTransporte : null,
-        tipoTransferencia === 'EXTERNA' ? responsavelEntrega : null,
-        statusTransferencia,
-        usuario
-      ]
-    );
-
-    const idTransferencia = result.insertId;
-    const saldoDepois = saldoAntes - quantidade;
-
-    await inserirLogTransferencia(conn, {
-      idTransferencia,
-      acao: 'CRIACAO',
-      saldoAntes,
-      quantidadeTransferida: quantidade,
-      saldoDepois,
-      usuario,
-      observacao: `Tipo: ${tipoTransferencia}; Status inicial: ${statusTransferencia}${observacao ? `; Obs: ${observacao}` : ''}`
-    });
-
-    await conn.commit();
-
-    const centroCustoDestino = obterNomeCentroCustoDestino(localDestino);
-
-    const mensagemWhatsapp = montarMensagemTransferenciaWhatsapp({
-      acao: 'CRIACAO',
-      codigo: produto?.CODIGO || produto?.codigo || '',
-      descricao: produto?.DESCRICAO || produto?.descricao || 'Material',
-      quantidade,
-      unidade: unidade || produto?.unidade || 'UN',
-      localOrigem: localOrigem?.NOME || localOrigem?.nome || '',
-      localDestino: localDestino?.NOME || localDestino?.nome || '',
-      centroCusto: centroCustoDestino,
-      usuario,
-      tipoTransferencia,
-      observacao
-    });
-
-    try {
-      await notificarUsuariosCentroCustoTransferencia(conn, {
-        centroCusto: centroCustoDestino,
-        mensagem: mensagemWhatsapp
-      });
-    } catch (erroNotificacao) {
-      console.error('Transferência criada com sucesso, mas houve falha ao enviar WhatsApp:', erroNotificacao);
-    }
-
-    return res.json({
-      success: true,
-      id: idTransferencia,
-      statusTransferencia,
-      message: 'Transferência registrada com sucesso.'
-    });
-  } catch (err) {
-    console.error('Erro ao registrar transferência:', err);
-    try {
-      if (conn) await conn.rollback();
-    } catch {}
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao registrar transferência.',
-      error: err.message
-    });
-  } finally {
-    if (conn) conn.release();
-  }
-});
-
-app.put('/api/estoque/transferencias/:id', async (req, res) => {
-  let conn;
-
-  try {
-    const idTransferencia = Number(req.params.id);
-    const idLocalDestino = Number(req.body.idLocalDestino);
-    const quantidadeNova = parseDecimal(req.body.quantidade);
-    const observacao = textolivreTr(req.body.observacao, 255);
-    const usuario = textolivreTr(req.body.usuario, 150) || 'SISTEMA';
-
-    if (!idTransferencia) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe o ID da transferência.'
-      });
-    }
-
-    if (!idLocalDestino) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe o local de destino.'
-      });
-    }
-
-    if (!(quantidadeNova > 0)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe uma quantidade válida.'
-      });
-    }
-
-    conn = await pool.getConnection();
-    await conn.beginTransaction();
-
-    const [rowsAtual] = await conn.query(
-      `
-      SELECT *
-      FROM SF_ESTOQUE_TRANSFERENCIA
-      WHERE ID = ?
-      LIMIT 1
-      `,
-      [idTransferencia]
-    );
-
-    const atual = rowsAtual[0];
-
-    if (!atual) {
-      await conn.rollback();
-      return res.status(404).json({
-        success: false,
-        message: 'Transferência não encontrada.'
-      });
-    }
-
-    if (atual.STATUS_TRANSFERENCIA !== 'AGUARDANDO_RECEBIMENTO') {
-      await conn.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Apenas transferências aguardando recebimento podem ser editadas.'
-      });
-    }
-
-
-    const produto = await validarProdutoSistema(conn, atual.ID_PRODUTO);
-    if (!produto) {
-      await conn.rollback();
-      return res.status(404).json({
-        success: false,
-        message: 'Produto vinculado à transferência não foi encontrado.'
-      });
-    }
-
-    const localOrigem = await validarLocalAlmoxarifado(conn, atual.ID_LOCAL_ORIGEM);
-    if (!localOrigem) {
-      await conn.rollback();
-      return res.status(404).json({
-        success: false,
-        message: 'Local de origem da transferência não encontrado.'
-      });
-    }
-
-    const localDestino = await validarLocalCentrocusto(conn, idLocalDestino);
-    if (!localDestino) {
-      await conn.rollback();
-      return res.status(404).json({
-        success: false,
-        message: 'Local de destino não encontrado.'
-      });
-    }
-
-    if (Number(atual.ID_LOCAL_ORIGEM) === idLocalDestino) {
-      await conn.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'O local de destino deve ser diferente do local de origem.'
-      });
-    }
-
-    const saldoInfo = await obterSaldoTransferivel(
-      conn,
-      atual.ID_PRODUTO,
-      atual.ID_LOCAL_ORIGEM,
-      idTransferencia
-    );
-
-    const quantidadeAtual = Number(atual.QUANTIDADE ?? 0);
-    const saldoAntes = saldoInfo.saldo + quantidadeAtual;
-    const saldoMaximoPermitido = saldoInfo.saldo + quantidadeAtual;
-
-    if (quantidadeNova > saldoMaximoPermitido) {
-      await conn.rollback();
-      return res.status(400).json({
-        success: false,
-        message: `Quantidade excede o saldo disponível (${saldoMaximoPermitido}).`
-      });
-    }
-
-    await conn.query(
-      `
-      UPDATE SF_ESTOQUE_TRANSFERENCIA
-      SET
-        ID_LOCAL_DESTINO = ?,
-        QUANTIDADE = ?,
-        OBSERVACAO = ?,
-        UNIDADE = ?,
-        USUARIO_ALTERACAO = ?,
-        DATA_ALTERACAO = NOW()
-      WHERE ID = ?
-      `,
-      [
-        idLocalDestino,
-        quantidadeNova,
-        observacao || null,
-        atual.UNIDADE || produto.unidade || null,
-        usuario,
-        idTransferencia
-      ]
-    );
-
-    const saldoDepois = saldoAntes - quantidadeNova;
-
-    await inserirLogTransferencia(conn, {
-      idTransferencia,
-      acao: 'EDICAO',
-      saldoAntes,
-      quantidadeTransferida: quantidadeNova,
-      saldoDepois,
-      usuario,
-      observacao
-    });
-
-    await conn.commit();
-
-    const centroCustoDestino = obterNomeCentroCustoDestino(localDestino);
-
-    const mensagemWhatsapp = montarMensagemTransferenciaWhatsapp({
-      acao: 'EDICAO',
-      codigo: produto?.CODIGO || produto?.codigo || '',
-      descricao: produto?.DESCRICAO || produto?.descricao || 'Material',
-      quantidade: quantidadeNova,
-      unidade: atual.UNIDADE || produto?.unidade || 'UN',
-      localOrigem: localOrigem?.NOME || localOrigem?.nome || '',
-      localDestino: localDestino?.NOME || localDestino?.nome || '',
-      centroCusto: centroCustoDestino,
-      usuario,
-      tipoTransferencia: atual.TIPO_TRANSFERENCIA || req.body.tipoTransferencia || 'LOCAL',
-      observacao
-    });
-
-    try {
-      await notificarUsuariosCentroCustoTransferencia(conn, {
-        centroCusto: centroCustoDestino,
-        mensagem: mensagemWhatsapp
-      });
-    } catch (erroNotificacao) {
-      console.error('Transferência editada com sucesso, mas houve falha ao enviar WhatsApp:', erroNotificacao);
-    }
-
-    return res.json({
-      success: true,
-      message: 'Transferência atualizada com sucesso.'
-    });
-  } catch (err) {
-    console.error('Erro ao editar transferência:', err);
-
-    try { if (conn) await conn.rollback(); } catch {}
-
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao editar transferência.',
-      error: err.message
-    });
-  } finally {
-    if (conn) conn.release();
-  }
-});
 
 app.delete('/api/estoque/transferencias/:id', async (req, res) => {
   let conn;
@@ -13748,7 +13360,60 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
   }
 });
 
-// notificação de tranferencia WhatsApp
+// notificação transferencias via WhatsApp
+
+function obterNomeCentroCustoDestino(localDestino) {
+  return (
+    localDestino?.CENTRO_CUSTO ||
+    localDestino?.centro_custo ||
+    localDestino?.NOME ||
+    localDestino?.nome ||
+    localDestino?.DESCRICAO ||
+    localDestino?.descricao ||
+    ''
+  ).toString().trim();
+}
+
+function normalizarNumeroWhatsAppBR(numero) {
+  const digitos = String(numero || '').replace(/\D/g, '');
+
+  if (!digitos) return null;
+  if (digitos.length === 11) return `55${digitos}`;
+  if (digitos.length === 13 && digitos.startsWith('55')) return digitos;
+
+  return null;
+}
+
+function escapeHtml(valor) {
+  return String(valor ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+async function listarUsuariosCentroCustoWhatsapp(conn, centroCusto) {
+  const [rows] = await conn.query(
+    `
+    SELECT
+      id,
+      nome,
+      EMAIL,
+      TELEFONE,
+      CENTRO_CUSTO,
+      status
+    FROM SF_USUARIO
+    WHERE status = 'Ativo'
+      AND TELEFONE IS NOT NULL
+      AND TELEFONE <> ''
+      AND TRIM(UPPER(CENTRO_CUSTO)) = TRIM(UPPER(?))
+    `,
+    [centroCusto]
+  );
+
+  return rows;
+}
 
 async function validarStatusInstanciaZApi() {
   const { clientToken } = getZApiConfig();
@@ -13776,34 +13441,7 @@ async function validarStatusInstanciaZApi() {
   return data;
 }
 
-function obterNomeCentroCustoDestino(localDestino) {
-  return (
-    localDestino?.CENTRO_CUSTO ||
-    localDestino?.centro_custo ||
-    localDestino?.NOME ||
-    localDestino?.nome ||
-    localDestino?.DESCRICAO ||
-    localDestino?.descricao ||
-    ''
-  ).toString().trim();
-}
-
-function normalizarNumeroWhatsAppBR(numero) {
-  const digitos = String(numero || '').replace(/\D/g, '');
-
-  if (!digitos) return null;
-
-  if (digitos.length === 11) return `55${digitos}`;
-  if (digitos.length === 13 && digitos.startsWith('55')) return digitos;
-
-  return null;
-}
-
-function normalizarTextoComparacao(valor) {
-  return String(valor || '').trim().toUpperCase();
-}
-
-function montarMensagemTransferenciaWhatsapp({
+function montarHtmlCardTransferencia({
   acao,
   codigo,
   descricao,
@@ -13817,38 +13455,234 @@ function montarMensagemTransferenciaWhatsapp({
   observacao
 }) {
   const titulo = acao === 'EDICAO'
-    ? '🔄 *TRANSFERÊNCIA ATUALIZADA*'
-    : '📦 *NOVA TRANSFERÊNCIA REGISTRADA*';
+    ? 'Transferência Atualizada'
+    : 'Nova Transferência Registrada';
 
-  const tipoTexto =
-    tipoTransferencia === 'EXTERNA'
-      ? '🚚 Externa'
-      : '🏢 Local';
+  const subtitulo = tipoTransferencia === 'EXTERNA'
+    ? 'Movimentação externa de material'
+    : 'Movimentação interna de material';
 
-  const linhas = [
-    titulo,
-    '━━━━━━━━━━━━━━━━━━',
-    codigo ? `🔖 *Código:* ${codigo}` : null,
-    `📋 *Material:* ${descricao || 'Material não informado'}`,
-    `📦 *Quantidade:* ${quantidade} ${unidade || 'UN'}`,
-    localOrigem ? `📍 *Origem:* ${localOrigem}` : null,
-    localDestino ? `🏁 *Destino:* ${localDestino}` : null,
-    centroCusto ? `🏢 *Centro de custo:* ${centroCusto}` : null,
-    `🔁 *Tipo:* ${tipoTexto}`,
-    `👤 *Usuário:* ${usuario || 'SISTEMA'}`,
-    observacao ? `📝 *Observação:* ${observacao}` : null,
-    '━━━━━━━━━━━━━━━━━━',
-    '✅ _Mensagem automática do sistema de estoque._'
-  ];
+  const corPrincipal = acao === 'EDICAO' ? '#d97706' : '#0f766e';
+  const badgeCor = tipoTransferencia === 'EXTERNA' ? '#b45309' : '#1d4ed8';
+  const badgeTexto = tipoTransferencia === 'EXTERNA' ? 'EXTERNA' : 'LOCAL';
 
-  return linhas.filter(Boolean).join('\n');
+  return `
+  <!DOCTYPE html>
+  <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Transferência</title>
+      <style>
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          font-family: Arial, Helvetica, sans-serif;
+          background: #eef2f7;
+        }
+        .canvas {
+          width: 1080px;
+          height: 1080px;
+          padding: 48px;
+          background:
+            radial-gradient(circle at top right, rgba(15, 118, 110, 0.15), transparent 30%),
+            linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
+        }
+        .card {
+          width: 100%;
+          height: 100%;
+          background: #ffffff;
+          border-radius: 36px;
+          box-shadow: 0 25px 80px rgba(15, 23, 42, 0.10);
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          border: 1px solid #e5e7eb;
+        }
+        .header {
+          padding: 42px 46px 30px;
+          background: linear-gradient(135deg, ${corPrincipal} 0%, #111827 100%);
+          color: #fff;
+        }
+        .topline {
+          font-size: 26px;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+          opacity: .9;
+          margin-bottom: 18px;
+          font-weight: 700;
+        }
+        .titulo {
+          font-size: 52px;
+          line-height: 1.1;
+          font-weight: 800;
+          margin: 0 0 12px;
+        }
+        .subtitulo {
+          font-size: 28px;
+          line-height: 1.4;
+          opacity: .92;
+          margin: 0;
+        }
+        .content {
+          padding: 42px 46px;
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+          flex: 1;
+        }
+        .badge {
+          align-self: flex-start;
+          background: ${badgeCor};
+          color: white;
+          padding: 10px 18px;
+          border-radius: 999px;
+          font-size: 24px;
+          font-weight: 700;
+          letter-spacing: .5px;
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 18px;
+        }
+        .item, .item-full {
+          background: #f8fafc;
+          border: 1px solid #e5e7eb;
+          border-radius: 24px;
+          padding: 22px 24px;
+        }
+        .item-full {
+          grid-column: 1 / -1;
+        }
+        .label {
+          font-size: 20px;
+          font-weight: 700;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: .6px;
+          margin-bottom: 10px;
+        }
+        .valor {
+          font-size: 30px;
+          color: #0f172a;
+          font-weight: 700;
+          line-height: 1.35;
+          word-break: break-word;
+        }
+        .footer {
+          margin-top: auto;
+          padding: 26px 46px 34px;
+          border-top: 1px solid #e5e7eb;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          color: #64748b;
+          font-size: 22px;
+        }
+        .footer strong {
+          color: #0f172a;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="canvas">
+        <div class="card">
+          <div class="header">
+            <div class="topline">Controle de Estoque</div>
+            <h1 class="titulo">${escapeHtml(titulo)}</h1>
+            <p class="subtitulo">${escapeHtml(subtitulo)}</p>
+          </div>
+
+          <div class="content">
+            <div class="badge">${escapeHtml(badgeTexto)}</div>
+
+            <div class="grid">
+              <div class="item">
+                <div class="label">Código</div>
+                <div class="valor">${escapeHtml(codigo || '—')}</div>
+              </div>
+
+              <div class="item">
+                <div class="label">Quantidade</div>
+                <div class="valor">${escapeHtml(String(quantidade))} ${escapeHtml(unidade || 'UN')}</div>
+              </div>
+
+              <div class="item-full">
+                <div class="label">Material</div>
+                <div class="valor">${escapeHtml(descricao || 'Material não informado')}</div>
+              </div>
+
+              <div class="item">
+                <div class="label">Origem</div>
+                <div class="valor">${escapeHtml(localOrigem || '—')}</div>
+              </div>
+
+              <div class="item">
+                <div class="label">Destino</div>
+                <div class="valor">${escapeHtml(localDestino || '—')}</div>
+              </div>
+
+              <div class="item">
+                <div class="label">Centro de custo</div>
+                <div class="valor">${escapeHtml(centroCusto || '—')}</div>
+              </div>
+
+              <div class="item">
+                <div class="label">Usuário</div>
+                <div class="valor">${escapeHtml(usuario || 'SISTEMA')}</div>
+              </div>
+
+              ${
+                observacao
+                  ? `
+                    <div class="item-full">
+                      <div class="label">Observação</div>
+                      <div class="valor">${escapeHtml(observacao)}</div>
+                    </div>
+                  `
+                  : ''
+              }
+            </div>
+          </div>
+
+          <div class="footer">
+            <div><strong>Status:</strong> ${escapeHtml(acao === 'EDICAO' ? 'Atualizada' : 'Registrada')}</div>
+            <div>Notificação automática</div>
+          </div>
+        </div>
+      </div>
+    </body>
+  </html>
+  `;
 }
 
+async function gerarImagemTransferenciaBase64(dados) {
+  const html = montarHtmlCardTransferencia(dados);
 
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
 
-async function enviarWhatsAppZApi({ telefone, mensagem }) {
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1080, height: 1080, deviceScaleFactor: 1 });
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    const buffer = await page.screenshot({
+      type: 'png'
+    });
+
+    const base64 = `data:image/png;base64,${buffer.toString('base64')}`;
+    return base64;
+  } finally {
+    await browser.close();
+  }
+}
+
+async function enviarImagemWhatsAppZApi({ telefone, imageBase64, caption = '' }) {
   const { clientToken } = getZApiConfig();
-  const endpoint = getZApiSendTextUrl();
+  const endpoint = getZApiSendImageUrl();
 
   const numero = normalizarNumeroWhatsAppBR(telefone);
 
@@ -13858,15 +13692,17 @@ async function enviarWhatsAppZApi({ telefone, mensagem }) {
 
   const payload = {
     phone: numero,
-    message: mensagem
+    image: imageBase64,
+    caption,
+    viewOnce: false
   };
 
-  console.log('[ZAPI] Enviando mensagem...');
-  console.log('[ZAPI] Endpoint:', endpoint);
-  console.log('[ZAPI] Instance ID:', process.env.ZAPI_INSTANCE_ID);
-  console.log('[ZAPI] Telefone original:', telefone);
-  console.log('[ZAPI] Telefone normalizado:', numero);
-  console.log('[ZAPI] Payload:', payload);
+  console.log('[ZAPI][IMAGE] Enviando imagem...');
+  console.log('[ZAPI][IMAGE] Endpoint:', endpoint);
+  console.log('[ZAPI][IMAGE] Instance ID:', process.env.ZAPI_INSTANCE_ID);
+  console.log('[ZAPI][IMAGE] Telefone original:', telefone);
+  console.log('[ZAPI][IMAGE] Telefone normalizado:', numero);
+  console.log('[ZAPI][IMAGE] Caption:', caption);
 
   const resp = await fetch(endpoint, {
     method: 'POST',
@@ -13879,46 +13715,32 @@ async function enviarWhatsAppZApi({ telefone, mensagem }) {
 
   const data = await resp.json().catch(() => null);
 
-  console.log('[ZAPI] Response code:', resp.status);
-  console.log('[ZAPI] Response body:', data);
+  console.log('[ZAPI][IMAGE] Response code:', resp.status);
+  console.log('[ZAPI][IMAGE] Response body:', data);
 
   if (!resp.ok) {
-    throw new Error(data?.message || data?.error || `Erro ao enviar mensagem via Z-API. HTTP ${resp.status}`);
+    throw new Error(data?.message || data?.error || `Erro ao enviar imagem via Z-API. HTTP ${resp.status}`);
   }
 
   return data;
 }
 
-async function listarUsuariosCentroCustoWhatsapp(conn, centroCusto) {
-  const [rows] = await conn.query(
-    `
-    SELECT
-      id,
-      nome,
-      EMAIL,
-      TELEFONE,
-      CENTRO_CUSTO,
-      status
-    FROM SF_USUARIO
-    WHERE status = 'Ativo'
-      AND TELEFONE IS NOT NULL
-      AND TELEFONE <> ''
-      AND TRIM(UPPER(CENTRO_CUSTO)) = TRIM(UPPER(?))
-    `,
-    [centroCusto]
-  );
-
-  return rows;
-}
-
-async function notificarUsuariosCentroCustoTransferencia(conn, {
+async function notificarUsuariosCentroCustoTransferenciaImagem(conn, {
   centroCusto,
-  mensagem
+  dadosImagem,
+  caption
 }) {
   if (!centroCusto) return [];
 
   const usuarios = await listarUsuariosCentroCustoWhatsapp(conn, centroCusto);
   const resultados = [];
+
+  if (!usuarios.length) {
+    console.log('[WHATSAPP][IMAGE] Nenhum usuário encontrado para o centro de custo:', centroCusto);
+    return resultados;
+  }
+
+  const imageBase64 = await gerarImagemTransferenciaBase64(dadosImagem);
 
   for (const usuario of usuarios) {
     try {
@@ -13935,9 +13757,10 @@ async function notificarUsuariosCentroCustoTransferencia(conn, {
         continue;
       }
 
-      const retorno = await enviarWhatsAppZApi({
+      const retorno = await enviarImagemWhatsAppZApi({
         telefone: numero,
-        mensagem
+        imageBase64,
+        caption
       });
 
       resultados.push({
@@ -13948,6 +13771,8 @@ async function notificarUsuariosCentroCustoTransferencia(conn, {
         retorno
       });
     } catch (err) {
+      console.error(`Erro ao notificar com imagem ${usuario.nome}:`, err.message);
+
       resultados.push({
         usuarioId: usuario.id,
         nome: usuario.nome,
@@ -13955,12 +13780,429 @@ async function notificarUsuariosCentroCustoTransferencia(conn, {
         sucesso: false,
         erro: err.message
       });
-      console.error(`Erro ao notificar ${usuario.nome}:`, err.message);
     }
   }
 
   return resultados;
 }
+
+app.post('/api/estoque/transferencias', async (req, res) => {
+  let conn;
+
+  try {
+    const idProduto = Number(req.body.idProduto);
+    const idLocalOrigem = Number(req.body.idLocalOrigem);
+    const idLocalDestino = Number(req.body.idLocalDestino);
+    const quantidade = parseDecimal(req.body.quantidade);
+    const unidade = textolivreTr(req.body.unidade, 10);
+    const observacao = textolivreTr(req.body.observacao, 255);
+    const usuario = textolivreTr(req.body.usuario, 150) || 'SISTEMA';
+
+    const tipoTransferencia = textolivreTr(req.body.tipoTransferencia, 20).toUpperCase();
+    const responsavelTransporte = textolivreTr(req.body.responsavelTransporte, 150);
+    const responsavelEntrega = textolivreTr(req.body.responsavelEntrega, 150);
+
+    if (!idProduto || !idLocalOrigem || !idLocalDestino) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe idProduto, idLocalOrigem e idLocalDestino.'
+      });
+    }
+
+    if (!['LOCAL', 'EXTERNA'].includes(tipoTransferencia)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um tipo de transferência válido: LOCAL ou EXTERNA.'
+      });
+    }
+
+    if (tipoTransferencia === 'EXTERNA' && (!responsavelTransporte || !responsavelEntrega)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe quem levará o material e para quem será entregue.'
+      });
+    }
+
+    if (idLocalOrigem === idLocalDestino) {
+      return res.status(400).json({
+        success: false,
+        message: 'O local de destino deve ser diferente do local de origem.'
+      });
+    }
+
+    if (!(quantidade > 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe uma quantidade válida para transferência.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const produto = await validarProdutoSistema(conn, idProduto);
+    if (!produto) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, message: 'Produto não encontrado na SF_PRODUTOS.' });
+    }
+
+    if (Number(produto.ativo ?? 1) !== 1) {
+      await conn.rollback();
+      return res.status(400).json({ success: false, message: 'O produto informado está inativo.' });
+    }
+
+    const localOrigem = await validarLocalAlmoxarifado(conn, idLocalOrigem);
+    if (!localOrigem) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, message: 'Local de origem não encontrado.' });
+    }
+
+    const localDestino = await validarLocalCentrocusto(conn, idLocalDestino);
+    if (!localDestino) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, message: 'Local de destino não encontrado.' });
+    }
+
+    const [rowsEntradaOrigem] = await conn.query(
+      `
+      SELECT pe.id, pe.unidade_nf, pe.ID_LOCAL_ALMOXARIFADO
+      FROM SF_PRODUTO_ENTRADA pe
+      WHERE pe.produto_sistema_id = ?
+        AND pe.ID_LOCAL_ALMOXARIFADO = ?
+      ORDER BY pe.id ASC
+      LIMIT 1
+      `,
+      [idProduto, idLocalOrigem]
+    );
+
+    const entradaOrigem = rowsEntradaOrigem[0] || null;
+    if (!entradaOrigem) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Não existe entrada desse produto nesse local para transferir.'
+      });
+    }
+
+    const saldoInfo = await obterSaldoTransferivel(conn, idProduto, idLocalOrigem);
+    const saldoAntes = saldoInfo.saldo;
+
+    if (quantidade > saldoAntes) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Quantidade excede o saldo disponível (${saldoAntes}).`
+      });
+    }
+
+    const statusTransferencia =
+      tipoTransferencia === 'LOCAL'
+        ? 'AGUARDANDO_RECEBIMENTO'
+        : 'EM_TRANSITO';
+
+    const [result] = await conn.query(
+      `
+      INSERT INTO SF_ESTOQUE_TRANSFERENCIA
+        (
+          ID_PRODUTO,
+          ID_ENTRADA_ORIGEM,
+          ID_LOCAL_ORIGEM,
+          ID_LOCAL_DESTINO,
+          QUANTIDADE,
+          UNIDADE,
+          OBSERVACAO,
+          TIPO_TRANSFERENCIA,
+          RESPONSAVEL_TRANSPORTE,
+          RESPONSAVEL_ENTREGA,
+          STATUS_TRANSFERENCIA,
+          USUARIO_CADASTRO
+        )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        idProduto,
+        Number(entradaOrigem.id),
+        idLocalOrigem,
+        idLocalDestino,
+        quantidade,
+        unidade || produto.unidade || entradaOrigem.unidade_nf || null,
+        observacao || null,
+        tipoTransferencia,
+        tipoTransferencia === 'EXTERNA' ? responsavelTransporte : null,
+        tipoTransferencia === 'EXTERNA' ? responsavelEntrega : null,
+        statusTransferencia,
+        usuario
+      ]
+    );
+
+    const idTransferencia = result.insertId;
+    const saldoDepois = saldoAntes - quantidade;
+
+    await inserirLogTransferencia(conn, {
+      idTransferencia,
+      acao: 'CRIACAO',
+      saldoAntes,
+      quantidadeTransferida: quantidade,
+      saldoDepois,
+      usuario,
+      observacao: `Tipo: ${tipoTransferencia}; Status inicial: ${statusTransferencia}${observacao ? `; Obs: ${observacao}` : ''}`
+    });
+
+    await conn.commit();
+
+    const centroCustoDestino = obterNomeCentroCustoDestino(localDestino);
+
+    const dadosImagem = {
+      acao: 'CRIACAO',
+      codigo: produto?.CODIGO || produto?.codigo || '',
+      descricao: produto?.DESCRICAO || produto?.descricao || 'Material',
+      quantidade,
+      unidade: unidade || produto?.unidade || 'UN',
+      localOrigem: localOrigem?.NOME || localOrigem?.nome || '',
+      localDestino: localDestino?.NOME || localDestino?.nome || '',
+      centroCusto: centroCustoDestino,
+      usuario,
+      tipoTransferencia,
+      observacao
+    };
+
+    const caption = '📦 Nova transferência registrada no sistema.';
+
+    try {
+      await validarStatusInstanciaZApi();
+
+      await notificarUsuariosCentroCustoTransferenciaImagem(conn, {
+        centroCusto: centroCustoDestino,
+        dadosImagem,
+        caption
+      });
+    } catch (erroNotificacao) {
+      console.error('Transferência criada com sucesso, mas houve falha ao enviar imagem via WhatsApp:', erroNotificacao);
+    }
+
+    return res.json({
+      success: true,
+      id: idTransferencia,
+      statusTransferencia,
+      message: 'Transferência registrada com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao registrar transferência:', err);
+    try {
+      if (conn) await conn.rollback();
+    } catch {}
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao registrar transferência.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/estoque/transferencias/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const idTransferencia = Number(req.params.id);
+    const idLocalDestino = Number(req.body.idLocalDestino);
+    const quantidadeNova = parseDecimal(req.body.quantidade);
+    const observacao = textolivreTr(req.body.observacao, 255);
+    const usuario = textolivreTr(req.body.usuario, 150) || 'SISTEMA';
+
+    if (!idTransferencia) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o ID da transferência.'
+      });
+    }
+
+    if (!idLocalDestino) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o local de destino.'
+      });
+    }
+
+    if (!(quantidadeNova > 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe uma quantidade válida.'
+      });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [rowsAtual] = await conn.query(
+      `
+      SELECT *
+      FROM SF_ESTOQUE_TRANSFERENCIA
+      WHERE ID = ?
+      LIMIT 1
+      `,
+      [idTransferencia]
+    );
+
+    const atual = rowsAtual[0];
+
+    if (!atual) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Transferência não encontrada.'
+      });
+    }
+
+    if (atual.STATUS_TRANSFERENCIA !== 'AGUARDANDO_RECEBIMENTO') {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Apenas transferências aguardando recebimento podem ser editadas.'
+      });
+    }
+
+
+    const produto = await validarProdutoSistema(conn, atual.ID_PRODUTO);
+    if (!produto) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Produto vinculado à transferência não foi encontrado.'
+      });
+    }
+
+    const localOrigem = await validarLocalAlmoxarifado(conn, atual.ID_LOCAL_ORIGEM);
+    if (!localOrigem) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Local de origem da transferência não encontrado.'
+      });
+    }
+
+    const localDestino = await validarLocalCentrocusto(conn, idLocalDestino);
+    if (!localDestino) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Local de destino não encontrado.'
+      });
+    }
+
+    if (Number(atual.ID_LOCAL_ORIGEM) === idLocalDestino) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'O local de destino deve ser diferente do local de origem.'
+      });
+    }
+
+    const saldoInfo = await obterSaldoTransferivel(
+      conn,
+      atual.ID_PRODUTO,
+      atual.ID_LOCAL_ORIGEM,
+      idTransferencia
+    );
+
+    const quantidadeAtual = Number(atual.QUANTIDADE ?? 0);
+    const saldoAntes = saldoInfo.saldo + quantidadeAtual;
+    const saldoMaximoPermitido = saldoInfo.saldo + quantidadeAtual;
+
+    if (quantidadeNova > saldoMaximoPermitido) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Quantidade excede o saldo disponível (${saldoMaximoPermitido}).`
+      });
+    }
+
+    await conn.query(
+      `
+      UPDATE SF_ESTOQUE_TRANSFERENCIA
+      SET
+        ID_LOCAL_DESTINO = ?,
+        QUANTIDADE = ?,
+        OBSERVACAO = ?,
+        UNIDADE = ?,
+        USUARIO_ALTERACAO = ?,
+        DATA_ALTERACAO = NOW()
+      WHERE ID = ?
+      `,
+      [
+        idLocalDestino,
+        quantidadeNova,
+        observacao || null,
+        atual.UNIDADE || produto.unidade || null,
+        usuario,
+        idTransferencia
+      ]
+    );
+
+    const saldoDepois = saldoAntes - quantidadeNova;
+
+    await inserirLogTransferencia(conn, {
+      idTransferencia,
+      acao: 'EDICAO',
+      saldoAntes,
+      quantidadeTransferida: quantidadeNova,
+      saldoDepois,
+      usuario,
+      observacao
+    });
+
+        await conn.commit();
+
+    const centroCustoDestino = obterNomeCentroCustoDestino(localDestino);
+
+    const dadosImagem = {
+      acao: 'EDICAO',
+      codigo: produto?.CODIGO || produto?.codigo || '',
+      descricao: produto?.DESCRICAO || produto?.descricao || 'Material',
+      quantidade: quantidadeNova,
+      unidade: atual.UNIDADE || produto?.unidade || 'UN',
+      localOrigem: localOrigem?.NOME || localOrigem?.nome || '',
+      localDestino: localDestino?.NOME || localDestino?.nome || '',
+      centroCusto: centroCustoDestino,
+      usuario,
+      tipoTransferencia: atual.TIPO_TRANSFERENCIA || req.body.tipoTransferencia || 'LOCAL',
+      observacao
+    };
+
+    const caption = '🔄 Transferência atualizada no sistema.';
+
+    try {
+      await validarStatusInstanciaZApi();
+
+      await notificarUsuariosCentroCustoTransferenciaImagem(conn, {
+        centroCusto: centroCustoDestino,
+        dadosImagem,
+        caption
+      });
+    } catch (erroNotificacao) {
+      console.error('Transferência editada com sucesso, mas houve falha ao enviar imagem via WhatsApp:', erroNotificacao);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Transferência atualizada com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao editar transferência:', err);
+
+    try { if (conn) await conn.rollback(); } catch {}
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao editar transferência.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 
 
 // =====================
