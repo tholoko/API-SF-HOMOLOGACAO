@@ -627,8 +627,8 @@ function montarHtmlCardAniversario(usuario) {
         }
 
         .logo-slot.logo-direita img {
-          max-width: 255px;
-          max-height: 60px;
+          max-width: 295px;
+          max-height: 78px;
         }
       </style>
     </head>
