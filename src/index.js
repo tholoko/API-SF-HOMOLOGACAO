@@ -13664,6 +13664,159 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
   }
 });
 
+// notificação de tranferencia WhatsApp
+
+function normalizarNumeroWhatsAppBR(numero) {
+  const digitos = String(numero || '').replace(/\D/g, '');
+
+  if (!digitos) return null;
+
+  if (digitos.length === 11) return `55${digitos}`;
+  if (digitos.length === 13 && digitos.startsWith('55')) return digitos;
+
+  return null;
+}
+
+function normalizarTextoComparacao(valor) {
+  return String(valor || '').trim().toUpperCase();
+}
+
+function montarMensagemTransferenciaWhatsapp({
+  acao,
+  codigo,
+  descricao,
+  quantidade,
+  unidade,
+  localOrigem,
+  localDestino,
+  centroCusto,
+  usuario,
+  tipoTransferencia,
+  observacao
+}) {
+  return [
+    acao === 'EDICAO' ? '🔄 Transferência atualizada' : '📦 Nova transferência registrada',
+    '',
+    codigo ? `Código: ${codigo}` : null,
+    `Material: ${descricao || 'Material não informado'}`,
+    `Quantidade: ${quantidade} ${unidade || 'UN'}`,
+    localOrigem ? `Origem: ${localOrigem}` : null,
+    localDestino ? `Destino: ${localDestino}` : null,
+    centroCusto ? `Centro de custo: ${centroCusto}` : null,
+    tipoTransferencia ? `Tipo: ${tipoTransferencia}` : null,
+    `Usuário: ${usuario || 'SISTEMA'}`,
+    observacao ? `Observação: ${observacao}` : null
+  ].filter(Boolean).join('\n');
+}
+
+async function enviarWhatsAppZApi({ telefone, mensagem }) {
+  const endpoint = process.env.ZAPI_SEND_TEXT_URL;
+  const clientToken = process.env.ZAPI_CLIENT_TOKEN;
+
+  if (!endpoint) {
+    throw new Error('ZAPI_SEND_TEXT_URL não configurada.');
+  }
+
+  const numero = normalizarNumeroWhatsAppBR(telefone);
+
+  if (!numero) {
+    throw new Error('Número de WhatsApp inválido.');
+  }
+
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(clientToken ? { 'Client-Token': clientToken } : {})
+    },
+    body: JSON.stringify({
+      phone: numero,
+      message: mensagem
+    })
+  });
+
+  const data = await resp.json().catch(() => null);
+
+  if (!resp.ok) {
+    throw new Error(data?.message || data?.error || 'Erro ao enviar WhatsApp pela Z-API.');
+  }
+
+  return data;
+}
+
+async function listarUsuariosCentroCustoWhatsapp(conn, centroCusto) {
+  const [rows] = await conn.query(
+    `
+    SELECT
+      id,
+      nome,
+      EMAIL,
+      TELEFONE,
+      CENTRO_CUSTO,
+      status
+    FROM SF_USUARIO
+    WHERE status = 'Ativo'
+      AND TELEFONE IS NOT NULL
+      AND TELEFONE <> ''
+      AND TRIM(UPPER(CENTRO_CUSTO)) = TRIM(UPPER(?))
+    `,
+    [centroCusto]
+  );
+
+  return rows;
+}
+
+async function notificarUsuariosCentroCustoTransferencia(conn, {
+  centroCusto,
+  mensagem
+}) {
+  if (!centroCusto) return [];
+
+  const usuarios = await listarUsuariosCentroCustoWhatsapp(conn, centroCusto);
+  const resultados = [];
+
+  for (const usuario of usuarios) {
+    try {
+      const numero = normalizarNumeroWhatsAppBR(usuario.TELEFONE);
+
+      if (!numero) {
+        resultados.push({
+          usuarioId: usuario.id,
+          nome: usuario.nome,
+          telefone: usuario.TELEFONE,
+          sucesso: false,
+          erro: 'Telefone inválido'
+        });
+        continue;
+      }
+
+      const retorno = await enviarWhatsAppZApi({
+        telefone: numero,
+        mensagem
+      });
+
+      resultados.push({
+        usuarioId: usuario.id,
+        nome: usuario.nome,
+        telefone: numero,
+        sucesso: true,
+        retorno
+      });
+    } catch (err) {
+      resultados.push({
+        usuarioId: usuario.id,
+        nome: usuario.nome,
+        telefone: usuario.TELEFONE,
+        sucesso: false,
+        erro: err.message
+      });
+      console.error(`Erro ao notificar ${usuario.nome}:`, err.message);
+    }
+  }
+
+  return resultados;
+}
+
 
 // =====================
 // Inicia servidor (sempre por último)
