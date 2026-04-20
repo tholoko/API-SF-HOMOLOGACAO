@@ -307,6 +307,429 @@ app.get('/api/aniversariantes/mes', async (req, res) => {
   }
 });
 
+async function listarAniversariantesHoje(conn) {
+  const [rows] = await conn.query(`
+    SELECT
+      ID,
+      NOME,
+      SETOR,
+      LOCAL_TRABALHO,
+      FOTO,
+      DATA_NASCIMENTO,
+      TELEFONE,
+      TELEFONE_PESSOAL
+    FROM SF_USUARIO
+    WHERE STATUS = 'Ativo'
+      AND DATA_NASCIMENTO IS NOT NULL
+      AND DAY(DATA_NASCIMENTO) = DAY(CURDATE())
+      AND MONTH(DATA_NASCIMENTO) = MONTH(CURDATE())
+    ORDER BY NOME ASC
+  `);
+
+  return rows;
+}
+
+function obterTelefonesUsuario(usuario) {
+  const telefones = [
+    normalizarNumeroWhatsAppBR(usuario.TELEFONE_PESSOAL),
+    normalizarNumeroWhatsAppBR(usuario.TELEFONE)
+  ].filter(Boolean);
+
+  return [...new Set(telefones)];
+}
+
+function montarHtmlCardAniversario(usuario) {
+  const nome = usuario?.NOME || 'Colaborador(a)';
+  const setor = usuario?.SETOR || 'Setor não informado';
+  const local = usuario?.LOCAL_TRABALHO || 'Local não informado';
+
+  return `
+  <!DOCTYPE html>
+  <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Feliz Aniversário</title>
+      <style>
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          font-family: Arial, Helvetica, sans-serif;
+          background: linear-gradient(135deg, #f8fafc 0%, #e0f2fe 100%);
+        }
+
+        .canvas {
+          width: 1080px;
+          height: 1350px;
+          padding: 48px;
+          background:
+            radial-gradient(circle at top left, rgba(236, 72, 153, 0.18), transparent 24%),
+            radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.18), transparent 24%),
+            linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #fff7ed 100%);
+        }
+
+        .card {
+          width: 100%;
+          height: 100%;
+          border-radius: 36px;
+          overflow: hidden;
+          background: #ffffff;
+          box-shadow: 0 30px 80px rgba(15, 23, 42, 0.14);
+          border: 1px solid #e5e7eb;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .header {
+          padding: 56px 56px 32px;
+          background: linear-gradient(135deg, #ec4899 0%, #7c3aed 45%, #2563eb 100%);
+          color: #ffffff;
+          text-align: center;
+        }
+
+        .emoji {
+          font-size: 72px;
+          margin-bottom: 18px;
+        }
+
+        .tag {
+          display: inline-block;
+          padding: 10px 22px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.18);
+          font-size: 24px;
+          font-weight: 700;
+          letter-spacing: 1px;
+          margin-bottom: 22px;
+        }
+
+        .titulo {
+          margin: 0;
+          font-size: 68px;
+          line-height: 1.05;
+          font-weight: 800;
+        }
+
+        .subtitulo {
+          margin: 20px 0 0;
+          font-size: 28px;
+          line-height: 1.5;
+          opacity: .96;
+        }
+
+        .content {
+          flex: 1;
+          padding: 46px 56px 56px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 24px;
+        }
+
+        .nome-box {
+          background: linear-gradient(135deg, #fff1f2 0%, #eef2ff 100%);
+          border: 1px solid #e9d5ff;
+          border-radius: 30px;
+          padding: 30px 32px;
+          text-align: center;
+        }
+
+        .nome-label {
+          font-size: 22px;
+          color: #6b7280;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: .8px;
+          margin-bottom: 12px;
+        }
+
+        .nome {
+          font-size: 56px;
+          line-height: 1.15;
+          color: #111827;
+          font-weight: 800;
+          word-break: break-word;
+        }
+
+        .mensagem {
+          background: #f8fafc;
+          border: 1px solid #e5e7eb;
+          border-radius: 28px;
+          padding: 28px 30px;
+          font-size: 34px;
+          line-height: 1.5;
+          color: #1f2937;
+          text-align: center;
+          font-weight: 600;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 18px;
+        }
+
+        .info {
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          border-radius: 24px;
+          padding: 22px 24px;
+        }
+
+        .label {
+          font-size: 18px;
+          text-transform: uppercase;
+          letter-spacing: .8px;
+          color: #6b7280;
+          font-weight: 800;
+          margin-bottom: 10px;
+        }
+
+        .valor {
+          font-size: 30px;
+          line-height: 1.35;
+          color: #111827;
+          font-weight: 700;
+          word-break: break-word;
+        }
+
+        .rodape {
+          padding: 28px 56px 40px;
+          text-align: center;
+          font-size: 24px;
+          color: #6b7280;
+          border-top: 1px solid #e5e7eb;
+        }
+
+        .rodape strong {
+          color: #ec4899;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="canvas">
+        <div class="card">
+          <div class="header">
+            <div class="emoji">🎉🎂✨</div>
+            <div class="tag">ANIVERSARIANTE DO DIA</div>
+            <h1 class="titulo">Feliz Aniversário!</h1>
+            <p class="subtitulo">Hoje é um dia especial e queremos celebrar com você.</p>
+          </div>
+
+          <div class="content">
+            <div class="nome-box">
+              <div class="nome-label">Parabéns para</div>
+              <div class="nome">${escapeHtml(nome)}</div>
+            </div>
+
+            <div class="mensagem">
+              Desejamos muita saúde, paz, alegria, sucesso e muitas realizações em sua vida! 🥳
+            </div>
+
+            <div class="grid">
+              <div class="info">
+                <div class="label">Setor</div>
+                <div class="valor">${escapeHtml(setor)}</div>
+              </div>
+
+              <div class="info">
+                <div class="label">Local de trabalho</div>
+                <div class="valor">${escapeHtml(local)}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rodape">
+            Com carinho, <strong>Sociedade Franciosi</strong>
+          </div>
+        </div>
+      </div>
+    </body>
+  </html>
+  `;
+}
+
+async function gerarImagemAniversarioBase64(usuario) {
+  const html = montarHtmlCardAniversario(usuario);
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1080, height: 1350, deviceScaleFactor: 1 });
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    const buffer = await page.screenshot({
+      type: 'png'
+    });
+
+    return `data:image/png;base64,${buffer.toString('base64')}`;
+  } finally {
+    await browser.close();
+  }
+}
+
+async function enviarParabensParaUsuario(usuario) {
+  const telefones = obterTelefonesUsuario(usuario);
+
+  if (!telefones.length) {
+    return {
+      usuarioId: usuario.ID,
+      nome: usuario.NOME,
+      sucesso: false,
+      erro: 'Usuário sem telefone válido'
+    };
+  }
+
+  const imageBase64 = await gerarImagemAniversarioBase64(usuario);
+  const caption = `🎉 Feliz aniversário, ${usuario.NOME || 'colaborador(a)'}! Desejamos um dia especial e muitas felicidades.`;
+
+  const envios = [];
+
+  for (const telefone of telefones) {
+    try {
+      const retorno = await enviarImagemWhatsAppZApi({
+        telefone,
+        imageBase64,
+        caption
+      });
+
+      envios.push({
+        telefone,
+        sucesso: true,
+        retorno
+      });
+    } catch (err) {
+      envios.push({
+        telefone,
+        sucesso: false,
+        erro: err.message
+      });
+    }
+  }
+
+  return {
+    usuarioId: usuario.ID,
+    nome: usuario.NOME,
+    sucesso: envios.some(item => item.sucesso),
+    envios
+  };
+}
+
+async function jaEnviadoAniversarioHoje(conn, usuarioId) {
+  const [rows] = await conn.query(
+    `
+    SELECT ID
+    FROM SF_LOG_ANIVERSARIO_WHATSAPP
+    WHERE USUARIO_ID = ?
+      AND DATA_ENVIO = CURDATE()
+    LIMIT 1
+    `,
+    [usuarioId]
+  );
+
+  return rows.length > 0;
+}
+
+async function registrarEnvioAniversario(conn, usuarioId, telefones, statusEnvio, observacao = null) {
+  await conn.query(
+    `
+    INSERT INTO SF_LOG_ANIVERSARIO_WHATSAPP
+      (USUARIO_ID, DATA_ENVIO, TELEFONES, STATUS_ENVIO, OBSERVACAO)
+    VALUES
+      (?, CURDATE(), ?, ?, ?)
+    `,
+    [
+      usuarioId,
+      Array.isArray(telefones) ? telefones.join(', ') : String(telefones || ''),
+      statusEnvio,
+      observacao
+    ]
+  );
+}
+
+async function executarRotinaAniversariantes() {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const aniversariantes = await listarAniversariantesHoje(conn);
+
+    if (!aniversariantes.length) {
+      console.log('[ANIVERSARIANTES] Nenhum aniversariante hoje.');
+      return;
+    }
+
+    for (const usuario of aniversariantes) {
+      try {
+        const jaEnviado = await jaEnviadoAniversarioHoje(conn, usuario.ID);
+
+        if (jaEnviado) {
+          console.log(`[ANIVERSARIANTES] Já enviado hoje para ${usuario.NOME}.`);
+          continue;
+        }
+
+        const resultado = await enviarParabensParaUsuario(usuario);
+        const telefones = obterTelefonesUsuario(usuario);
+
+        await registrarEnvioAniversario(
+          conn,
+          usuario.ID,
+          telefones,
+          resultado.sucesso ? 'ENVIADO' : 'ERRO',
+          resultado.sucesso ? null : (resultado?.envios?.map(e => `${e.telefone}: ${e.erro || 'falha'}`).join(' | ') || 'Falha no envio')
+        );
+
+        console.log('[ANIVERSARIANTES] Resultado:', resultado);
+      } catch (errUsuario) {
+        console.error(`[ANIVERSARIANTES] Erro ao processar ${usuario.NOME}:`, errUsuario.message);
+
+        try {
+          await registrarEnvioAniversario(
+            conn,
+            usuario.ID,
+            obterTelefonesUsuario(usuario),
+            'ERRO',
+            errUsuario.message
+          );
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.error('[ANIVERSARIANTES] Erro na rotina automática:', err);
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
+cron.schedule('0 8,14 * * *', async () => {
+  console.log('[CRON] Iniciando verificação de aniversariantes...');
+  await executarRotinaAniversariantes();
+}, {
+  timezone: 'America/Bahia'
+});
+
+app.post('/api/aniversariantes/enviar-hoje', async (req, res) => {
+  try {
+    await executarRotinaAniversariantes();
+
+    return res.json({
+      success: true,
+      message: 'Rotina de aniversariantes executada com sucesso.'
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao executar rotina de aniversariantes.',
+      error: err.message
+    });
+  }
+});
+
+
 
 // =====================
 // Agendamentos - Sala
