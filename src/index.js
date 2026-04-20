@@ -13614,11 +13614,6 @@ function montarHtmlCardTransferencia({
               </div>
 
               <div class="item">
-                <div class="label">Centro de custo</div>
-                <div class="valor">${escapeHtml(centroCusto || '—')}</div>
-              </div>
-
-              <div class="item">
                 <div class="label">Usuário</div>
                 <div class="valor">${escapeHtml(usuario || 'SISTEMA')}</div>
               </div>
