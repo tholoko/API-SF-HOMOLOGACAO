@@ -15811,7 +15811,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
 
     return res.json({
       success: true,
-      message: msgConsulta,
+      message: `Consulta concluída com sucesso. ${qtd} documento(s) retornado(s).`,
       sessionId,
       items: docs.map(({ xml, json, ...rest }) => rest),
       meta: {
@@ -15820,7 +15820,10 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
         maxNSU: data?.maxNSU || ultNSU,
         cStat: data?.cStat || '',
         xMotivo: data?.xMotivo || '',
-        consultaSemDocumento,
+        documentoUsado: documentoFinal,
+        tipoDocumentoUsado: cnpj ? 'CNPJ' : 'CPF',
+        origemDocumento: documentoInformado ? 'informado' : 'certificado',
+        consultaSemDocumentoDigitado,
         limiteAplicado: limiteFinal
       }
     });
