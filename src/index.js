@@ -15444,6 +15444,36 @@ setInterval(() => {
   });
 }, 60 * 1000);
 
+app.delete('/api/ping-monitor/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const id = Number(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'ID inválido.' });
+    }
+
+    conn = await pool.getConnection();
+
+    const [result] = await conn.query(`DELETE FROM SF_PING_MONITOR WHERE ID = ?`, [id]);
+
+    return res.json({
+      success: true,
+      affectedRows: result.affectedRows,
+      message: 'Monitor excluído com sucesso.'
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir monitor.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 
 
 // =====================
