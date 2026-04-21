@@ -15726,46 +15726,77 @@ const uploadCertificadoDfe = multer({
 
 app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async (req, res) => {
   try {
-    const senha = String(req.body?.senha || '');
+    const senha = String(req.body?.senha || '').trim();
     const documento = limparDocumento(req.body?.documento || '');
     const cnpj = documento.length === 14 ? documento : '';
     const cpf = documento.length === 11 ? documento : '';
     const tpAmb = String(req.body?.tpAmb || '1');
     const cUFAutor = String(req.body?.cUFAutor || '29');
     const ultNSU = String(req.body?.ultNSU || '000000000000000').padStart(15, '0');
-    const limite = Math.max(1, Math.min(50, Number(req.body?.limite || 15)));
+    const limiteInformado = Math.max(1, Math.min(50, Number(req.body?.limite || 15)));
+    const consultaSemDocumento = !documento;
+    const limiteFinal = consultaSemDocumento ? 15 : limiteInformado;
 
     if (!req.file?.buffer) {
-      return res.status(400).json({ success: false, message: 'Certificado A1 não enviado.' });
-    }
-    if (!senha) {
-      return res.status(400).json({ success: false, message: 'Senha do certificado obrigatória.' });
-    }
-    if (documento && documento.length !== 11 && documento.length !== 14) {
-      return res.status(400).json({ success: false, message: 'Informe um CPF ou CNPJ válido.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione o certificado A1 (.pfx ou .p12) antes de consultar.'
+      });
     }
 
-    const distribuicao = new DistribuicaoDFe({
+    if (!senha) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a senha do certificado digital.'
+      });
+    }
+
+    if (documento && documento.length !== 11 && documento.length !== 14) {
+      return res.status(400).json({
+        success: false,
+        message: 'O documento informado é inválido. Informe um CNPJ com 14 dígitos.'
+      });
+    }
+
+    if (cpf) {
+      return res.status(400).json({
+        success: false,
+        message: 'A consulta por CPF está temporariamente desativada neste módulo. Use um CNPJ ou deixe o campo em branco.'
+      });
+    }
+
+    const configDistribuicao = {
       pfx: req.file.buffer,
       passphrase: senha,
-      cnpj,
       cUFAutor,
       tpAmb
-    });
+    };
 
-    const consulta = await distribuicao.consultaNSU(ultNSU);
+    if (cnpj) {
+      configDistribuicao.cnpj = cnpj;
+    }
+
+    const distribuicao = new DistribuicaoDFe(configDistribuicao);
+    const consulta = await distribuicao.consultaUltNSU(ultNSU);
+
     if (consulta?.error) {
-      return res.status(400).json({ success: false, message: consulta.error });
+      return res.status(400).json({
+        success: false,
+        message: `Falha no retorno da distribuição DF-e: ${consulta.error}`
+      });
     }
 
     const data = consulta?.data || {};
     let docs = normalizarDocsConsulta(data?.docZip || []);
-    docs = docs.slice(0, limite);
+    docs = docs.slice(0, limiteFinal);
 
     const sessionId = gerarSessionIdDfe();
     dfeSessions.set(sessionId, {
       createdAt: Date.now(),
+      lastAccessAt: Date.now(),
       cnpj,
+      documentoInformado: documento || '',
+      consultaSemDocumento,
       tpAmb,
       cUFAutor,
       ultNSU: data?.ultNSU || ultNSU,
@@ -15773,8 +15804,14 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       items: docs
     });
 
+    const qtd = docs.length;
+    const msgConsulta = consultaSemDocumento
+      ? `Consulta concluída. Foram retornados os últimos ${qtd} documento(s) disponíveis para o certificado.`
+      : `Consulta concluída com sucesso. Foram retornados ${qtd} documento(s) para o CNPJ informado.`;
+
     return res.json({
       success: true,
+      message: msgConsulta,
       sessionId,
       items: docs.map(({ xml, json, ...rest }) => rest),
       meta: {
@@ -15782,43 +15819,69 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
         ultNSU: data?.ultNSU || ultNSU,
         maxNSU: data?.maxNSU || ultNSU,
         cStat: data?.cStat || '',
-        xMotivo: data?.xMotivo || ''
+        xMotivo: data?.xMotivo || '',
+        consultaSemDocumento,
+        limiteAplicado: limiteFinal
       }
     });
   } catch (err) {
     console.error('Erro /api/dfe/consultar', err);
-    return res.status(500).json({ success: false, message: 'Erro ao consultar DF-e.', error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Não foi possível consultar os DF-e com o certificado informado.',
+      error: err.message
+    });
   }
 });
 
 app.get('/api/dfe/xml/:sessionId/:nsu', async (req, res) => {
   try {
     const { sessionId, nsu } = req.params;
-    const sessao = dfeSessions.get(sessionId);
+    const sessao = obterSessaoDfeAtiva(sessionId);
+
     if (!sessao) {
-      return res.status(404).json({ success: false, message: 'Sessão DF-e não encontrada ou expirada.' });
+      return res.status(440).json({
+        success: false,
+        expired: true,
+        message: 'Sua sessão de consulta expirou. Faça uma nova consulta para visualizar o XML.'
+      });
     }
+
     const item = (sessao.items || []).find(x => String(x.nsu) === String(nsu));
     if (!item) {
-      return res.status(404).json({ success: false, message: 'Documento não encontrado para o NSU informado.' });
+      return res.status(404).json({
+        success: false,
+        message: 'O XML solicitado não foi encontrado nesta sessão.'
+      });
     }
-    return res.json({ success: true, xml: item.xml || '' });
+
+    return res.json({
+      success: true,
+      xml: item.xml || ''
+    });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Erro ao recuperar XML.', error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao recuperar o XML da nota.',
+      error: err.message
+    });
   }
 });
 
 app.get('/api/dfe/xml-download/:sessionId/:nsu', async (req, res) => {
   try {
     const { sessionId, nsu } = req.params;
-    const sessao = dfeSessions.get(sessionId);
+    const sessao = obterSessaoDfeAtiva(sessionId);
+
     if (!sessao) {
-      return res.status(404).send('Sessão expirada.');
+      return res.status(440).send('Sessão expirada. Refaça a consulta para baixar o XML.');
     }
+
     const item = (sessao.items || []).find(x => String(x.nsu) === String(nsu));
     if (!item) {
-      return res.status(404).send('Documento não encontrado.');
+      return res.status(404).send('Documento não encontrado na sessão atual.');
     }
+
     const nome = `dfe-${String(item.nsu || 'sem-nsu')}.xml`;
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
@@ -15832,19 +15895,36 @@ app.post('/api/dfe/xml-lote', async (req, res) => {
   try {
     const sessionId = String(req.body?.sessionId || '');
     const nsus = Array.isArray(req.body?.nsus) ? req.body.nsus.map(String) : [];
-    const sessao = dfeSessions.get(sessionId);
+    const sessao = obterSessaoDfeAtiva(sessionId);
+
     if (!sessao) {
-      return res.status(404).json({ success: false, message: 'Sessão DF-e não encontrada ou expirada.' });
+      return res.status(440).json({
+        success: false,
+        expired: true,
+        message: 'Sua sessão expirou. Refaça a consulta para gerar o ZIP.'
+      });
     }
+
     if (!nsus.length) {
-      return res.status(400).json({ success: false, message: 'Nenhum NSU informado.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione ao menos um documento para gerar o ZIP.'
+      });
     }
 
     const zip = new AdmZip();
+
     for (const nsu of nsus) {
       const item = (sessao.items || []).find(x => String(x.nsu) === String(nsu));
       if (!item?.xml) continue;
       zip.addFile(`dfe-${nsu}.xml`, Buffer.from(item.xml, 'utf8'));
+    }
+
+    if (!zip.getEntries().length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nenhum XML válido foi encontrado para os NSUs selecionados.'
+      });
     }
 
     const bufferZip = zip.toBuffer();
@@ -15853,7 +15933,11 @@ app.post('/api/dfe/xml-lote', async (req, res) => {
     return res.send(bufferZip);
   } catch (err) {
     console.error('Erro /api/dfe/xml-lote', err);
-    return res.status(500).json({ success: false, message: 'Erro ao gerar ZIP.', error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao gerar o arquivo ZIP das notas selecionadas.',
+      error: err.message
+    });
   }
 });
 
