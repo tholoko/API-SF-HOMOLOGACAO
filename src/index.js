@@ -14,6 +14,9 @@ import cron from 'node-cron';
 import XLSX from 'xlsx';
 import puppeteer from 'puppeteer';
 import ping from 'ping';
+import { DistribuicaoDFe } from 'node-mde';
+import AdmZip from 'adm-zip';
+import zlib from 'node:zlib';
 
 import { titleCaseNome, normalizarEmail, somenteNumeros } from './utils.js';
 
@@ -15648,6 +15651,207 @@ app.get("/api/ping-monitor/:id/contatos", async (req, res) => {
     });
   } finally {
     if (conn) conn.release();
+  }
+});
+
+// DF-e Certificado
+
+const dfeSessions = new Map();
+
+function gerarSessionIdDfe() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function limparDocumento(v) {
+  return String(v || '').replace(/\D+/g, '');
+}
+
+function extrairValorResumoNFe(resNFe = {}) {
+  const total = resNFe.vNF || resNFe.valor || resNFe.valorTotal || 0;
+  const n = Number(String(total).replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function extrairDhEmissaoResumo(resNFe = {}) {
+  return resNFe.dhEmi || resNFe.dEmi || resNFe.dataEmissao || '';
+}
+
+function extrairEmitenteResumo(resNFe = {}) {
+  return resNFe.xNome || resNFe.emitente || resNFe.nomeEmitente || '';
+}
+
+function extrairCnpjEmitenteResumo(resNFe = {}) {
+  return limparDocumento(resNFe.CNPJ || resNFe.CPF || resNFe.emitenteCnpj || '');
+}
+
+function montarItemDfeFromDocZip(doc) {
+  const json = doc?.json || {};
+  const resNFe = json?.resNFe || json?.procNFe?.NFe?.infNFe?.emit || json?.nfeProc?.NFe?.infNFe?.emit || {};
+  const ide = json?.procNFe?.NFe?.infNFe?.ide || json?.nfeProc?.NFe?.infNFe?.ide || {};
+  const prot = json?.procNFe?.protNFe?.infProt || json?.nfeProc?.protNFe?.infProt || {};
+
+  return {
+    nsu: String(doc?.nsu || ''),
+    schema: String(doc?.schema || ''),
+    tipo: doc?.schema?.includes('procNFe') ? 'xml-completo' : 'resumo',
+    chave: String(resNFe.chNFe || prot.chNFe || ide.chave || ''),
+    emitente: extrairEmitenteResumo(resNFe),
+    emitenteCnpj: extrairCnpjEmitenteResumo(resNFe),
+    dataEmissao: extrairDhEmissaoResumo(resNFe),
+    valorTotal: extrairValorResumoNFe(resNFe),
+    xml: String(doc?.xml || ''),
+    json
+  };
+}
+
+function normalizarDocsConsulta(docZip = []) {
+  return (Array.isArray(docZip) ? docZip : []).map(montarItemDfeFromDocZip);
+}
+
+function removerSessoesDfeExpiradas() {
+  const agora = Date.now();
+  for (const [sessionId, sessao] of dfeSessions.entries()) {
+    if (!sessao?.createdAt || (agora - sessao.createdAt > 1000 * 60 * 30)) {
+      dfeSessions.delete(sessionId);
+    }
+  }
+}
+
+setInterval(removerSessoesDfeExpiradas, 1000 * 60 * 5).unref();
+
+const uploadCertificadoDfe = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async (req, res) => {
+  try {
+    const senha = String(req.body?.senha || '');
+    const cnpj = limparDocumento(req.body?.cnpj || '');
+    const tpAmb = String(req.body?.tpAmb || '1');
+    const cUFAutor = String(req.body?.cUFAutor || '29');
+    const ultNSU = String(req.body?.ultNSU || '000000000000000').padStart(15, '0');
+    const limite = Math.max(1, Math.min(50, Number(req.body?.limite || 15)));
+
+    if (!req.file?.buffer) {
+      return res.status(400).json({ success: false, message: 'Certificado A1 não enviado.' });
+    }
+    if (!senha) {
+      return res.status(400).json({ success: false, message: 'Senha do certificado obrigatória.' });
+    }
+    if (!cnpj || cnpj.length !== 14) {
+      return res.status(400).json({ success: false, message: 'CNPJ inválido.' });
+    }
+
+    const distribuicao = new DistribuicaoDFe({
+      pfx: req.file.buffer,
+      passphrase: senha,
+      cnpj,
+      cUFAutor,
+      tpAmb
+    });
+
+    const consulta = await distribuicao.consultaNSU(ultNSU);
+    if (consulta?.error) {
+      return res.status(400).json({ success: false, message: consulta.error });
+    }
+
+    const data = consulta?.data || {};
+    let docs = normalizarDocsConsulta(data?.docZip || []);
+    docs = docs.slice(0, limite);
+
+    const sessionId = gerarSessionIdDfe();
+    dfeSessions.set(sessionId, {
+      createdAt: Date.now(),
+      cnpj,
+      tpAmb,
+      cUFAutor,
+      ultNSU: data?.ultNSU || ultNSU,
+      maxNSU: data?.maxNSU || ultNSU,
+      items: docs
+    });
+
+    return res.json({
+      success: true,
+      sessionId,
+      items: docs.map(({ xml, json, ...rest }) => rest),
+      meta: {
+        tpAmb: data?.tpAmb || tpAmb,
+        ultNSU: data?.ultNSU || ultNSU,
+        maxNSU: data?.maxNSU || ultNSU,
+        cStat: data?.cStat || '',
+        xMotivo: data?.xMotivo || ''
+      }
+    });
+  } catch (err) {
+    console.error('Erro /api/dfe/consultar', err);
+    return res.status(500).json({ success: false, message: 'Erro ao consultar DF-e.', error: err.message });
+  }
+});
+
+app.get('/api/dfe/xml/:sessionId/:nsu', async (req, res) => {
+  try {
+    const { sessionId, nsu } = req.params;
+    const sessao = dfeSessions.get(sessionId);
+    if (!sessao) {
+      return res.status(404).json({ success: false, message: 'Sessão DF-e não encontrada ou expirada.' });
+    }
+    const item = (sessao.items || []).find(x => String(x.nsu) === String(nsu));
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Documento não encontrado para o NSU informado.' });
+    }
+    return res.json({ success: true, xml: item.xml || '' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erro ao recuperar XML.', error: err.message });
+  }
+});
+
+app.get('/api/dfe/xml-download/:sessionId/:nsu', async (req, res) => {
+  try {
+    const { sessionId, nsu } = req.params;
+    const sessao = dfeSessions.get(sessionId);
+    if (!sessao) {
+      return res.status(404).send('Sessão expirada.');
+    }
+    const item = (sessao.items || []).find(x => String(x.nsu) === String(nsu));
+    if (!item) {
+      return res.status(404).send('Documento não encontrado.');
+    }
+    const nome = `dfe-${String(item.nsu || 'sem-nsu')}.xml`;
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
+    return res.send(item.xml || '');
+  } catch (err) {
+    return res.status(500).send('Erro ao baixar XML.');
+  }
+});
+
+app.post('/api/dfe/xml-lote', async (req, res) => {
+  try {
+    const sessionId = String(req.body?.sessionId || '');
+    const nsus = Array.isArray(req.body?.nsus) ? req.body.nsus.map(String) : [];
+    const sessao = dfeSessions.get(sessionId);
+    if (!sessao) {
+      return res.status(404).json({ success: false, message: 'Sessão DF-e não encontrada ou expirada.' });
+    }
+    if (!nsus.length) {
+      return res.status(400).json({ success: false, message: 'Nenhum NSU informado.' });
+    }
+
+    const zip = new AdmZip();
+    for (const nsu of nsus) {
+      const item = (sessao.items || []).find(x => String(x.nsu) === String(nsu));
+      if (!item?.xml) continue;
+      zip.addFile(`dfe-${nsu}.xml`, Buffer.from(item.xml, 'utf8'));
+    }
+
+    const bufferZip = zip.toBuffer();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="dfe-selecionadas.zip"');
+    return res.send(bufferZip);
+  } catch (err) {
+    console.error('Erro /api/dfe/xml-lote', err);
+    return res.status(500).json({ success: false, message: 'Erro ao gerar ZIP.', error: err.message });
   }
 });
 
