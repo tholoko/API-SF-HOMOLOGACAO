@@ -13,10 +13,11 @@ import fetch from 'node-fetch';
 import cron from 'node-cron';
 import XLSX from 'xlsx';
 import puppeteer from 'puppeteer';
+import ping from 'ping';
 
 import { titleCaseNome, normalizarEmail, somenteNumeros } from './utils.js';
 
-const ping = require('ping');
+
 
 function getEnv(name, required = true) {
   const value = String(process.env[name] || '').trim();
