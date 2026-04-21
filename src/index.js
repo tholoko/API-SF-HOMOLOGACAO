@@ -14794,7 +14794,33 @@ app.put('/api/estoque/transferencias/:id', async (req, res) => {
   }
 });
 
-// notificação monitoramento de Ping
+
+
+// Notificação monitoramento de Ping  //
+// ---------------------------------- //
+
+app.get('/apiusuarios', async (req, res) => {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+    const items = await listarUsuariosAtivosComTelefone(conn);
+
+    return res.json({
+      success: true,
+      items
+    });
+  } catch (err) {
+    console.error('Erro ao listar usuários:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar usuários.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
 
 function parseIntSeguro(valor, padrao = 0) {
   const n = Number.parseInt(valor, 10);
