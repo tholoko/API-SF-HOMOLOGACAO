@@ -15727,7 +15727,9 @@ const uploadCertificadoDfe = multer({
 app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async (req, res) => {
   try {
     const senha = String(req.body?.senha || '');
-    const cnpj = limparDocumento(req.body?.cnpj || '');
+    const documento = limparDocumento(req.body?.documento || '');
+    const cnpj = documento.length === 14 ? documento : '';
+    const cpf = documento.length === 11 ? documento : '';
     const tpAmb = String(req.body?.tpAmb || '1');
     const cUFAutor = String(req.body?.cUFAutor || '29');
     const ultNSU = String(req.body?.ultNSU || '000000000000000').padStart(15, '0');
@@ -15739,8 +15741,8 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     if (!senha) {
       return res.status(400).json({ success: false, message: 'Senha do certificado obrigatória.' });
     }
-    if (!cnpj || cnpj.length !== 14) {
-      return res.status(400).json({ success: false, message: 'CNPJ inválido.' });
+    if (documento && documento.length !== 11 && documento.length !== 14) {
+      return res.status(400).json({ success: false, message: 'Informe um CPF ou CNPJ válido.' });
     }
 
     const distribuicao = new DistribuicaoDFe({
