@@ -15180,25 +15180,38 @@ app.post('/api/ping-monitor/:id/contatos', async (req, res) => {
 app.post('/api/ping-monitor/verificar', async (req, res) => {
   let conn;
 
+  console.log('[PING] Iniciando verificação manual', {
+    body: req.body,
+    dataHora: new Date().toISOString()
+  });
+
   try {
     const idMonitor = Number(req.body.idMonitor);
+    console.log('[PING] idMonitor recebido:', idMonitor);
 
     if (!idMonitor) {
+      console.log('[PING] idMonitor inválido');
       return res.status(400).json({
         success: false,
         message: 'Informe idMonitor.'
       });
     }
 
+    console.log('[PING] Obtendo conexão com banco...');
     conn = await pool.getConnection();
+    console.log('[PING] Conexão obtida com sucesso');
 
+    console.log('[PING] Buscando monitor no banco...', { idMonitor });
     const [rows] = await conn.query(
       `SELECT * FROM SF_PING_MONITOR WHERE ID = ? LIMIT 1`,
       [idMonitor]
     );
 
     const monitor = rows[0];
+    console.log('[PING] Resultado da busca do monitor:', monitor);
+
     if (!monitor) {
+      console.log('[PING] Monitor não encontrado', { idMonitor });
       return res.status(404).json({
         success: false,
         message: 'Monitor não encontrado.'
@@ -15206,7 +15219,16 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
     }
 
     const statusAnterior = monitor.STATUS_ATUAL || 'UNKNOWN';
+    console.log('[PING] Status anterior:', statusAnterior);
+
+    console.log('[PING] Executando ping no host...', {
+      ip: monitor.IP,
+      equipamento: monitor.EQUIPAMENTO,
+      localizacao: monitor.LOCALIZACAO
+    });
+
     const resultadoPing = await verificarPingHost(monitor.IP);
+    console.log('[PING] Resultado do ping:', resultadoPing);
 
     const statusNovo = resultadoPing.alive ? 'UP' : 'DOWN';
     const agora = new Date();
@@ -15219,6 +15241,15 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
       ? Number(monitor.QTD_SUCESSOS_CONSECUTIVOS || 0) + 1
       : 0;
 
+    console.log('[PING] Status calculado após verificação:', {
+      statusAnterior,
+      statusNovo,
+      qtdFalhas,
+      qtdSucessos,
+      agora
+    });
+
+    console.log('[PING] Atualizando tabela SF_PING_MONITOR...');
     await conn.query(
       `
       UPDATE SF_PING_MONITOR
@@ -15241,7 +15272,9 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
         idMonitor
       ]
     );
+    console.log('[PING] Monitor atualizado com sucesso');
 
+    console.log('[PING] Inserindo log em SF_PING_MONITOR_LOG...');
     const [logResult] = await conn.query(
       `
       INSERT INTO SF_PING_MONITOR_LOG
@@ -15259,6 +15292,10 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
       ]
     );
 
+    console.log('[PING] Log inserido com sucesso', {
+      logId: logResult.insertId
+    });
+
     let notificacao = null;
 
     const houveMudanca = statusAnterior !== statusNovo;
@@ -15269,8 +15306,18 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
         (statusNovo === 'UP' && houveMudanca)
       );
 
+    console.log('[PING] Avaliação de notificação:', {
+      enviarWhatsApp: monitor.ENVIAR_WHATSAPP,
+      houveMudanca,
+      deveNotificar,
+      statusAnterior,
+      statusNovo
+    });
+
     if (deveNotificar) {
+      console.log('[PING] Buscando contatos para envio...', { idMonitor });
       const contatos = await obterContatosParaEnvio(conn, idMonitor);
+      console.log('[PING] Contatos encontrados:', contatos);
 
       if (contatos.length) {
         const mensagem = montarMensagemAlertaPing({
@@ -15282,17 +15329,35 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
           erro: resultadoPing.alive ? null : resultadoPing.output
         });
 
+        console.log('[PING] Mensagem montada para envio:');
+        console.log(mensagem);
+
+        console.log('[PING] Enviando WhatsApp para lista...');
         notificacao = await enviarWhatsAppParaLista({
           lista: contatos,
           mensagem
         });
 
+        console.log('[PING] Resultado do envio WhatsApp:', notificacao);
+
+        console.log('[PING] Atualizando log como notificado...');
         await conn.query(
           `UPDATE SF_PING_MONITOR_LOG SET NOTIFICADO = '1', DATA_ENVIO_NOTIFICACAO = ? WHERE ID = ?`,
           [new Date(), logResult.insertId]
         );
+        console.log('[PING] Log atualizado como notificado');
+      } else {
+        console.log('[PING] Nenhum contato válido encontrado para notificação');
       }
+    } else {
+      console.log('[PING] Notificação não será enviada');
     }
+
+    console.log('[PING] Finalizando verificação com sucesso', {
+      idMonitor,
+      statusAnterior,
+      statusNovo
+    });
 
     return res.json({
       success: true,
@@ -15303,13 +15368,21 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
       notificacao
     });
   } catch (err) {
+    console.error('[PING] Erro ao verificar monitor:', {
+      message: err.message,
+      stack: err.stack
+    });
+
     return res.status(500).json({
       success: false,
       message: 'Erro ao verificar ping.',
       error: err.message
     });
   } finally {
-    if (conn) conn.release();
+    if (conn) {
+      console.log('[PING] Liberando conexão com banco');
+      conn.release();
+    }
   }
 });
 
