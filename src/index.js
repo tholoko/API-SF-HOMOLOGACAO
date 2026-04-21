@@ -15749,7 +15749,7 @@ function montarMensagemCStat(cStat, xMotivo, ultNSU, maxNSU) {
   }
 
   if (codigo === '656') {
-    return `Consumo indevido detectado pela SEFAZ. Utilize o ultNSU ${ultNSU || '000000000000000'} nas solicitações subsequentes e aguarde 1 hora antes de nova consulta.`;
+    return `Consumo indevido detectado pela SEFAZ. Utilize o ultNSU ${ultNSU || '000000000182444'} nas solicitações subsequentes e aguarde 1 hora antes de nova consulta.`;
   }
 
   return xMotivo || `Consulta rejeitada pela SEFAZ (cStat ${codigo}).`;
