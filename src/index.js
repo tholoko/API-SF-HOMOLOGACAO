@@ -15553,6 +15553,12 @@ app.delete('/api/ping-monitor/:id', async (req, res) => {
     }
 
     conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    await conn.query(
+      'DELETE FROM SF_PING_MONITOR_CONTATO WHERE MONITOR_ID = ?',
+      [id]
+    );
 
     const [result] = await conn.query(
       'DELETE FROM SF_PING_MONITOR WHERE ID = ?',
@@ -15560,19 +15566,24 @@ app.delete('/api/ping-monitor/:id', async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
+      await conn.rollback();
       return res.status(404).json({
         success: false,
         message: 'Monitor não encontrado.'
       });
     }
 
+    await conn.commit();
+
     return res.json({
       success: true,
-      affectedRows: result.affectedRows,
-      message: 'Monitor excluído com sucesso.'
+      message: 'Monitor e contatos vinculados excluídos com sucesso.'
     });
   } catch (err) {
+    if (conn) await conn.rollback();
+
     console.error('Erro ao excluir monitor:', err);
+
     return res.status(500).json({
       success: false,
       message: 'Erro ao excluir monitor.',
