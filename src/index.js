@@ -15773,15 +15773,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       console.log('[DFE] Validação falhou: documento inválido', { documento });
       return res.status(400).json({
         success: false,
-        message: 'O documento informado é inválido. Informe um CNPJ com 14 dígitos.'
-      });
-    }
-
-    if (cpf) {
-      console.log('[DFE] Consulta com CPF bloqueada no módulo atual', { cpf });
-      return res.status(400).json({
-        success: false,
-        message: 'A consulta por CPF está temporariamente desativada neste módulo. Use um CNPJ ou deixe o campo em branco.'
+        message: 'O documento informado é inválido. Informe um CPF com 11 dígitos, um CNPJ com 14 dígitos ou deixe o campo em branco.'
       });
     }
 
@@ -15796,12 +15788,26 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       configDistribuicao.cnpj = cnpj;
     }
 
+    if (cpf) {
+      configDistribuicao.cpf = cpf;
+    }
+
     console.log('[DFE] Configuração montada para DistribuicaoDFe:', {
       possuiCnpj: !!configDistribuicao.cnpj,
+      possuiCpf: !!configDistribuicao.cpf,
       cnpj: configDistribuicao.cnpj || null,
+      cpf: configDistribuicao.cpf || null,
       tpAmb: configDistribuicao.tpAmb,
       cUFAutor: configDistribuicao.cUFAutor
     });
+
+    if (!configDistribuicao.cnpj && !configDistribuicao.cpf) {
+      console.log('[DFE] Nenhum CPF/CNPJ informado para a consulta');
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um CPF, um CNPJ ou implemente a leitura automática do documento a partir do certificado.'
+      });
+    }
 
     console.log('[DFE] Instanciando DistribuicaoDFe...');
     const distribuicao = new DistribuicaoDFe(configDistribuicao);
@@ -15859,6 +15865,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       createdAt: Date.now(),
       lastAccessAt: Date.now(),
       cnpj,
+      cpf,
       documentoInformado: documento || '',
       consultaSemDocumento,
       tpAmb,
@@ -15876,9 +15883,12 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     });
 
     const qtd = docs.length;
+    const documentoUsado = cnpj || cpf || '';
+    const tipoDocumentoUsado = cnpj ? 'CNPJ' : cpf ? 'CPF' : '';
+
     const msgConsulta = consultaSemDocumento
-      ? `Consulta concluída. Foram retornados os últimos ${qtd} documento(s) disponíveis para o certificado.`
-      : `Consulta concluída com sucesso. Foram retornados ${qtd} documento(s) para o CNPJ informado.`;
+      ? `Consulta concluída com sucesso. ${qtd} documento(s) retornado(s).`
+      : `Consulta concluída com sucesso. ${qtd} documento(s) retornado(s) para o ${tipoDocumentoUsado} informado.`;
 
     console.log('[DFE] Finalizando rota com sucesso:', {
       sessionId,
@@ -15896,6 +15906,9 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
         maxNSU: data?.maxNSU || ultNSU,
         cStat: data?.cStat || '',
         xMotivo: data?.xMotivo || '',
+        documentoUsado,
+        tipoDocumentoUsado,
+        origemDocumento: documento ? 'informado' : 'certificado',
         consultaSemDocumento,
         limiteAplicado: limiteFinal
       }
