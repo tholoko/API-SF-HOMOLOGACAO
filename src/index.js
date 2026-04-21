@@ -15594,6 +15594,52 @@ app.delete('/api/ping-monitor/:id', async (req, res) => {
   }
 });
 
+app.get("/api/ping-monitor/:id/contatos", async (req, res) => {
+  let conn;
+
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID inválido."
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT
+        c.ID,
+        c.MONITOR_ID,
+        c.TIPO_CONTATO,
+        c.USUARIO_ID,
+        c.NOME_CONTATO,
+        c.TELEFONE,
+        c.ATIVO,
+        u.nome AS USUARIO_NOME,
+        u.EMAIL AS USUARIO_EMAIL
+      FROM SF_PING_MONITOR_CONTATO c
+      LEFT JOIN SF_USUARIO u ON u.id = c.USUARIO_ID
+      WHERE c.MONITOR_ID = ?
+      ORDER BY c.ID ASC
+    `, [id]);
+
+    return res.json({
+      success: true,
+      items: rows
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao carregar contatos do monitor.",
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
 
 
 // =====================
