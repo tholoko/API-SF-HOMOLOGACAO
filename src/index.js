@@ -13789,7 +13789,7 @@ app.post('/api/gestao-usuarios-importar', uploadMemoria.single('arquivo'), async
         const dataAdmissao = excelDateToISO(linha['DATA ADMISSÃO'] || linha['DATA ADMISSAO']);
         const funcao = titleCaseNome(linha['FUNÇÃO'] || linha['FUNCAO'] || '');
         const setor = titleCaseNome(linha['SETOR']);
-        const perfil = texto(linha['PERFIL']);
+        const perfil = texto(linha['PERFIL']) || 'Colaborador';
         const status = texto(linha['STATUS']) || 'Ativo';
         const centroCusto = titleCaseNome(linha['CENTRO CUSTO']);
         const unidadeTrabalho = titleCaseNome(linha['UNIDADE TRABALHO']);
