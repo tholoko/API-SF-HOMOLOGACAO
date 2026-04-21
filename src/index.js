@@ -15538,11 +15538,6 @@ async function rotinaPingMonitoramento() {
   }
 }
 
-setInterval(() => {
-  rotinaPingMonitoramento().catch(err => {
-    console.error('Falha na rotina automática de ping:', err);
-  });
-}, 60 * 1000);
 
 app.delete('/api/ping-monitor/:id', async (req, res) => {
   let conn;
