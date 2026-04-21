@@ -14884,6 +14884,113 @@ async function verificarPingHost(ip) {
   };
 }
 
+function montarMensagemAlertaPing({ equipamento, ip, localizacao, status, tempoMs, erro }) {
+  const base = [
+    `🚨 ALERTA DE PING`,
+    ``,
+    `Equipamento: ${equipamento}`,
+    `IP: ${ip}`,
+    `Local: ${localizacao}`,
+    `Status: ${status}`,
+    tempoMs != null ? `Tempo: ${tempoMs} ms` : null,
+    erro ? `Erro: ${erro}` : null,
+    `Data/Hora: ${new Date().toLocaleString('pt-BR')}`
+  ].filter(Boolean);
+
+  return base.join('\n');
+}
+
+async function obterContatosParaEnvio(conn, monitorId) {
+  const contatos = await listarContatosMonitor(conn, monitorId);
+  const saida = [];
+  const usados = new Set();
+
+  for (const c of contatos) {
+    let nome = c.NOME_CONTATO || c.USUARIO_NOME || 'Contato';
+    let telefone = c.TELEFONE;
+
+    if (c.TIPO_CONTATO === 'USUARIO' && c.USUARIO_ID) {
+      telefone = c.TELEFONE || '';
+      nome = c.USUARIO_NOME || nome;
+    }
+
+    const normalizado = normalizarNumeroWhatsAppBR(telefone);
+    if (!normalizado) continue;
+
+    const chave = `${normalizado}`;
+    if (usados.has(chave)) continue;
+    usados.add(chave);
+
+    saida.push({
+      nome,
+      telefone: normalizado,
+      tipo: c.TIPO_CONTATO
+    });
+  }
+
+  return saida;
+}
+
+async function enviarWhatsAppParaLista({ lista, mensagem }) {
+  const resultados = [];
+
+  for (const item of lista) {
+    try {
+      const retorno = await enviarTextoWhatsAppZApi({
+        telefone: item.telefone,
+        message: mensagem
+      });
+
+      resultados.push({
+        nome: item.nome,
+        telefone: item.telefone,
+        sucesso: true,
+        retorno
+      });
+    } catch (err) {
+      resultados.push({
+        nome: item.nome,
+        telefone: item.telefone,
+        sucesso: false,
+        erro: err.message
+      });
+    }
+  }
+
+  return resultados;
+}
+
+async function enviarTextoWhatsAppZApi({ telefone, message }) {
+  const { clientToken } = getZApiConfig();
+  const endpoint = getZApiSendTextUrl();
+
+  const numero = normalizarNumeroWhatsAppBR(telefone);
+  if (!numero) {
+    throw new Error(`Número inválido para WhatsApp: ${telefone}`);
+  }
+
+  const payload = {
+    phone: numero,
+    message
+  };
+
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(clientToken ? { 'Client-Token': clientToken } : {})
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await resp.json().catch(() => null);
+
+  if (!resp.ok) {
+    throw new Error(data?.message || data?.error || `Erro ao enviar WhatsApp. HTTP ${resp.status}`);
+  }
+
+  return data;
+}
 
 app.post('/api/ping-monitor', async (req, res) => {
   let conn;
@@ -15069,6 +15176,300 @@ app.post('/api/ping-monitor/:id/contatos', async (req, res) => {
     if (conn) conn.release();
   }
 });
+
+app.post('/api/ping-monitor/verificar', async (req, res) => {
+  let conn;
+
+  try {
+    const idMonitor = Number(req.body.idMonitor);
+
+    if (!idMonitor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe idMonitor.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(
+      `SELECT * FROM SF_PING_MONITOR WHERE ID = ? LIMIT 1`,
+      [idMonitor]
+    );
+
+    const monitor = rows[0];
+    if (!monitor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Monitor não encontrado.'
+      });
+    }
+
+    const statusAnterior = monitor.STATUS_ATUAL || 'UNKNOWN';
+    const resultadoPing = await verificarPingHost(monitor.IP);
+
+    const statusNovo = resultadoPing.alive ? 'UP' : 'DOWN';
+    const agora = new Date();
+
+    const qtdFalhas = resultadoPing.alive
+      ? 0
+      : Number(monitor.QTD_FALHAS_CONSECUTIVAS || 0) + 1;
+
+    const qtdSucessos = resultadoPing.alive
+      ? Number(monitor.QTD_SUCESSOS_CONSECUTIVOS || 0) + 1
+      : 0;
+
+    await conn.query(
+      `
+      UPDATE SF_PING_MONITOR
+      SET
+        STATUS_ATUAL = ?,
+        ULTIMA_VERIFICACAO = ?,
+        ULTIMO_OK = ?,
+        ULTIMA_FALHA = ?,
+        QTD_FALHAS_CONSECUTIVAS = ?,
+        QTD_SUCESSOS_CONSECUTIVOS = ?
+      WHERE ID = ?
+      `,
+      [
+        statusNovo,
+        agora,
+        resultadoPing.alive ? agora : monitor.ULTIMO_OK,
+        !resultadoPing.alive ? agora : monitor.ULTIMA_FALHA,
+        qtdFalhas,
+        qtdSucessos,
+        idMonitor
+      ]
+    );
+
+    const [logResult] = await conn.query(
+      `
+      INSERT INTO SF_PING_MONITOR_LOG
+        (MONITOR_ID, IP, STATUS_ANTERIOR, STATUS_NOVO, TEMPO_MS, ERRO, DATA_VERIFICACAO)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        idMonitor,
+        monitor.IP,
+        statusAnterior,
+        statusNovo,
+        resultadoPing.alive ? resultadoPing.time : null,
+        resultadoPing.alive ? null : resultadoPing.output || 'Host indisponível',
+        agora
+      ]
+    );
+
+    let notificacao = null;
+
+    const houveMudanca = statusAnterior !== statusNovo;
+    const deveNotificar =
+      monitor.ENVIAR_WHATSAPP === '1' &&
+      (
+        (statusNovo === 'DOWN' && qtdFalhas >= 1 && houveMudanca) ||
+        (statusNovo === 'UP' && houveMudanca)
+      );
+
+    if (deveNotificar) {
+      const contatos = await obterContatosParaEnvio(conn, idMonitor);
+
+      if (contatos.length) {
+        const mensagem = montarMensagemAlertaPing({
+          equipamento: monitor.EQUIPAMENTO,
+          ip: monitor.IP,
+          localizacao: monitor.LOCALIZACAO,
+          status: statusNovo,
+          tempoMs: resultadoPing.time,
+          erro: resultadoPing.alive ? null : resultadoPing.output
+        });
+
+        notificacao = await enviarWhatsAppParaLista({
+          lista: contatos,
+          mensagem
+        });
+
+        await conn.query(
+          `UPDATE SF_PING_MONITOR_LOG SET NOTIFICADO = '1', DATA_ENVIO_NOTIFICACAO = ? WHERE ID = ?`,
+          [new Date(), logResult.insertId]
+        );
+      }
+    }
+
+    return res.json({
+      success: true,
+      idMonitor,
+      statusAnterior,
+      statusNovo,
+      ping: resultadoPing,
+      notificacao
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao verificar ping.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+async function verificarMonitoresPendentes(conn) {
+  const [rows] = await conn.query(`
+    SELECT *
+    FROM SF_PING_MONITOR
+    WHERE ATIVO = '1'
+    ORDER BY ID ASC
+  `);
+
+  const agora = Date.now();
+  const resultados = [];
+
+  for (const monitor of rows) {
+    const ultima = monitor.ULTIMA_VERIFICACAO ? new Date(monitor.ULTIMA_VERIFICACAO).getTime() : 0;
+    const intervaloMs = Number(monitor.INTERVALO_MINUTOS || 5) * 60 * 1000;
+
+    if (ultima && agora - ultima < intervaloMs) {
+      continue;
+    }
+
+    try {
+      const resp = await fetch(`http://localhost:3000/api/ping-monitor/verificar-interno/${monitor.ID}`, {
+        method: 'POST'
+      }).catch(() => null);
+
+      resultados.push({
+        id: monitor.ID,
+        executado: true,
+        ok: !!resp
+      });
+    } catch (err) {
+      resultados.push({
+        id: monitor.ID,
+        executado: false,
+        erro: err.message
+      });
+    }
+  }
+
+  return resultados;
+}
+
+async function rotinaPingMonitoramento() {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+    const [rows] = await conn.query(`
+      SELECT *
+      FROM SF_PING_MONITOR
+      WHERE ATIVO = '1'
+      ORDER BY ID ASC
+    `);
+
+    for (const monitor of rows) {
+      const ultima = monitor.ULTIMA_VERIFICACAO ? new Date(monitor.ULTIMA_VERIFICACAO).getTime() : 0;
+      const intervaloMs = Number(monitor.INTERVALO_MINUTOS || 5) * 60 * 1000;
+      const agora = Date.now();
+
+      if (ultima && agora - ultima < intervaloMs) continue;
+
+      try {
+        const statusAnterior = monitor.STATUS_ATUAL || 'UNKNOWN';
+        const resultadoPing = await verificarPingHost(monitor.IP);
+        const statusNovo = resultadoPing.alive ? 'UP' : 'DOWN';
+        const dataAgora = new Date();
+
+        const qtdFalhas = resultadoPing.alive
+          ? 0
+          : Number(monitor.QTD_FALHAS_CONSECUTIVAS || 0) + 1;
+
+        const qtdSucessos = resultadoPing.alive
+          ? Number(monitor.QTD_SUCESSOS_CONSECUTIVOS || 0) + 1
+          : 0;
+
+        await conn.query(
+          `
+          UPDATE SF_PING_MONITOR
+          SET STATUS_ATUAL = ?, ULTIMA_VERIFICACAO = ?, ULTIMO_OK = ?, ULTIMA_FALHA = ?, QTD_FALHAS_CONSECUTIVAS = ?, QTD_SUCESSOS_CONSECUTIVOS = ?
+          WHERE ID = ?
+          `,
+          [
+            statusNovo,
+            dataAgora,
+            resultadoPing.alive ? dataAgora : monitor.ULTIMO_OK,
+            !resultadoPing.alive ? dataAgora : monitor.ULTIMA_FALHA,
+            qtdFalhas,
+            qtdSucessos,
+            monitor.ID
+          ]
+        );
+
+        const [logResult] = await conn.query(
+          `
+          INSERT INTO SF_PING_MONITOR_LOG
+            (MONITOR_ID, IP, STATUS_ANTERIOR, STATUS_NOVO, TEMPO_MS, ERRO, DATA_VERIFICACAO)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            monitor.ID,
+            monitor.IP,
+            statusAnterior,
+            statusNovo,
+            resultadoPing.alive ? resultadoPing.time : null,
+            resultadoPing.alive ? null : resultadoPing.output || 'Host indisponível',
+            dataAgora
+          ]
+        );
+
+        const houveMudanca = statusAnterior !== statusNovo;
+        const deveNotificar =
+          monitor.ENVIAR_WHATSAPP === '1' &&
+          (
+            (statusNovo === 'DOWN' && houveMudanca) ||
+            (statusNovo === 'UP' && houveMudanca)
+          );
+
+        if (deveNotificar) {
+          const contatos = await obterContatosParaEnvio(conn, monitor.ID);
+          if (contatos.length) {
+            const mensagem = montarMensagemAlertaPing({
+              equipamento: monitor.EQUIPAMENTO,
+              ip: monitor.IP,
+              localizacao: monitor.LOCALIZACAO,
+              status: statusNovo,
+              tempoMs: resultadoPing.time,
+              erro: resultadoPing.alive ? null : resultadoPing.output
+            });
+
+            const retornoEnvio = await enviarWhatsAppParaLista({
+              lista: contatos,
+              mensagem
+            });
+
+            await conn.query(
+              `UPDATE SF_PING_MONITOR_LOG SET NOTIFICADO = '1', DATA_ENVIO_NOTIFICACAO = ? WHERE ID = ?`,
+              [new Date(), logResult.insertId]
+            );
+
+            console.log('Notificação enviada', monitor.ID, retornoEnvio);
+          }
+        }
+      } catch (err) {
+        console.error(`Erro ao verificar monitor ${monitor.ID}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('Erro na rotina de monitoramento:', err.message);
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
+setInterval(() => {
+  rotinaPingMonitoramento().catch(err => {
+    console.error('Falha na rotina automática de ping:', err);
+  });
+}, 60 * 1000);
 
 app.delete('/api/ping-monitor/:id', async (req, res) => {
   let conn;
