@@ -15726,6 +15726,8 @@ const uploadCertificadoDfe = multer({
 
 app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async (req, res) => {
   try {
+    console.log('[DFE] Iniciando consulta /api/dfe/consultar');
+
     const senha = String(req.body?.senha || '').trim();
     const documento = limparDocumento(req.body?.documento || '');
     const cnpj = documento.length === 14 ? documento : '';
@@ -15737,7 +15739,22 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     const consultaSemDocumento = !documento;
     const limiteFinal = consultaSemDocumento ? 15 : limiteInformado;
 
+    console.log('[DFE] Parâmetros recebidos:', {
+      documento,
+      tipoDocumento: cnpj ? 'CNPJ' : cpf ? 'CPF' : 'VAZIO',
+      tpAmb,
+      cUFAutor,
+      ultNSU,
+      limiteInformado,
+      limiteFinal,
+      consultaSemDocumento,
+      arquivoRecebido: !!req.file,
+      nomeArquivo: req.file?.originalname || null,
+      tamanhoArquivo: req.file?.size || 0
+    });
+
     if (!req.file?.buffer) {
+      console.log('[DFE] Validação falhou: certificado não enviado');
       return res.status(400).json({
         success: false,
         message: 'Selecione o certificado A1 (.pfx ou .p12) antes de consultar.'
@@ -15745,6 +15762,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     }
 
     if (!senha) {
+      console.log('[DFE] Validação falhou: senha não informada');
       return res.status(400).json({
         success: false,
         message: 'Informe a senha do certificado digital.'
@@ -15752,6 +15770,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     }
 
     if (documento && documento.length !== 11 && documento.length !== 14) {
+      console.log('[DFE] Validação falhou: documento inválido', { documento });
       return res.status(400).json({
         success: false,
         message: 'O documento informado é inválido. Informe um CNPJ com 14 dígitos.'
@@ -15759,6 +15778,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     }
 
     if (cpf) {
+      console.log('[DFE] Consulta com CPF bloqueada no módulo atual', { cpf });
       return res.status(400).json({
         success: false,
         message: 'A consulta por CPF está temporariamente desativada neste módulo. Use um CNPJ ou deixe o campo em branco.'
@@ -15776,10 +15796,31 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       configDistribuicao.cnpj = cnpj;
     }
 
+    console.log('[DFE] Configuração montada para DistribuicaoDFe:', {
+      possuiCnpj: !!configDistribuicao.cnpj,
+      cnpj: configDistribuicao.cnpj || null,
+      tpAmb: configDistribuicao.tpAmb,
+      cUFAutor: configDistribuicao.cUFAutor
+    });
+
+    console.log('[DFE] Instanciando DistribuicaoDFe...');
     const distribuicao = new DistribuicaoDFe(configDistribuicao);
+
+    console.log('[DFE] Executando consultaUltNSU...', { ultNSU });
     const consulta = await distribuicao.consultaUltNSU(ultNSU);
 
+    console.log('[DFE] Retorno bruto da consulta recebido:', {
+      possuiError: !!consulta?.error,
+      possuiData: !!consulta?.data,
+      cStat: consulta?.data?.cStat || null,
+      xMotivo: consulta?.data?.xMotivo || null,
+      ultNSU: consulta?.data?.ultNSU || null,
+      maxNSU: consulta?.data?.maxNSU || null,
+      quantidadeDocZip: Array.isArray(consulta?.data?.docZip) ? consulta.data.docZip.length : 0
+    });
+
     if (consulta?.error) {
+      console.log('[DFE] Consulta retornou erro de negócio:', consulta.error);
       return res.status(400).json({
         success: false,
         message: `Falha no retorno da distribuição DF-e: ${consulta.error}`
@@ -15788,9 +15829,32 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
 
     const data = consulta?.data || {};
     let docs = normalizarDocsConsulta(data?.docZip || []);
+
+    console.log('[DFE] Documentos normalizados:', {
+      quantidadeAntesDoSlice: docs.length
+    });
+
     docs = docs.slice(0, limiteFinal);
 
+    console.log('[DFE] Documentos após aplicar limite:', {
+      quantidadeFinal: docs.length,
+      limiteFinal
+    });
+
+    if (docs.length) {
+      console.log('[DFE] Primeiro documento retornado:', {
+        nsu: docs[0]?.nsu || null,
+        chave: docs[0]?.chave || null,
+        emitente: docs[0]?.emitente || null,
+        tipo: docs[0]?.tipo || null,
+        dataEmissao: docs[0]?.dataEmissao || null
+      });
+    } else {
+      console.log('[DFE] Nenhum documento retornado após normalização/filtro');
+    }
+
     const sessionId = gerarSessionIdDfe();
+
     dfeSessions.set(sessionId, {
       createdAt: Date.now(),
       lastAccessAt: Date.now(),
@@ -15804,14 +15868,26 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       items: docs
     });
 
+    console.log('[DFE] Sessão criada com sucesso:', {
+      sessionId,
+      quantidadeItens: docs.length,
+      ultNSU: data?.ultNSU || ultNSU,
+      maxNSU: data?.maxNSU || ultNSU
+    });
+
     const qtd = docs.length;
     const msgConsulta = consultaSemDocumento
       ? `Consulta concluída. Foram retornados os últimos ${qtd} documento(s) disponíveis para o certificado.`
       : `Consulta concluída com sucesso. Foram retornados ${qtd} documento(s) para o CNPJ informado.`;
 
+    console.log('[DFE] Finalizando rota com sucesso:', {
+      sessionId,
+      mensagem: msgConsulta
+    });
+
     return res.json({
       success: true,
-      message: `Consulta concluída com sucesso. ${qtd} documento(s) retornado(s).`,
+      message: msgConsulta,
       sessionId,
       items: docs.map(({ xml, json, ...rest }) => rest),
       meta: {
@@ -15820,15 +15896,16 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
         maxNSU: data?.maxNSU || ultNSU,
         cStat: data?.cStat || '',
         xMotivo: data?.xMotivo || '',
-        documentoUsado: documentoFinal,
-        tipoDocumentoUsado: cnpj ? 'CNPJ' : 'CPF',
-        origemDocumento: documentoInformado ? 'informado' : 'certificado',
-        consultaSemDocumentoDigitado,
+        consultaSemDocumento,
         limiteAplicado: limiteFinal
       }
     });
   } catch (err) {
-    console.error('Erro /api/dfe/consultar', err);
+    console.error('[DFE] Erro /api/dfe/consultar:', {
+      message: err?.message,
+      stack: err?.stack
+    });
+
     return res.status(500).json({
       success: false,
       message: 'Não foi possível consultar os DF-e com o certificado informado.',
