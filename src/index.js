@@ -1368,7 +1368,7 @@ app.post('/api/gestao-usuarios-centro-custo', async (req, res) => {
 app.get('/api/usuarios', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, nome, email, setor
+      `SELECT id, nome, email, setor, telefone
          FROM SF_USUARIO
         WHERE email IS NOT NULL AND email <> ''
         AND status <> 'Desativado'
