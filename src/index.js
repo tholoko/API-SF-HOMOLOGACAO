@@ -15724,6 +15724,37 @@ const uploadCertificadoDfe = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
+function mapearStatusHttpPorCStat(cStat) {
+  if (['472', '593', '656'].includes(String(cStat))) return 400;
+  return 422;
+}
+
+function montarMensagemCStat(cStat, xMotivo, ultNSU, maxNSU) {
+  const codigo = String(cStat || '');
+
+  if (codigo === '137') {
+    return `Nenhum documento localizado para este CPF/CNPJ. Use o ultNSU ${ultNSU || '000000000000000'} nas próximas consultas e aguarde ao menos 1 hora antes de consultar novamente se não houver novos documentos.`;
+  }
+
+  if (codigo === '138') {
+    return xMotivo || 'Documento(s) localizado(s).';
+  }
+
+  if (codigo === '472') {
+    return 'O CPF informado na consulta difere do CPF do certificado digital utilizado.';
+  }
+
+  if (codigo === '593') {
+    return 'O CNPJ informado na consulta difere do CNPJ-base do certificado digital utilizado.';
+  }
+
+  if (codigo === '656') {
+    return `Consumo indevido detectado pela SEFAZ. Utilize o ultNSU ${ultNSU || '000000000000000'} nas solicitações subsequentes e aguarde 1 hora antes de nova consulta.`;
+  }
+
+  return xMotivo || `Consulta rejeitada pela SEFAZ (cStat ${codigo}).`;
+}
+
 app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async (req, res) => {
   try {
     console.log('[DFE] Iniciando consulta /api/dfe/consultar');
@@ -15784,13 +15815,8 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       tpAmb
     };
 
-    if (cnpj) {
-      configDistribuicao.cnpj = cnpj;
-    }
-
-    if (cpf) {
-      configDistribuicao.cpf = cpf;
-    }
+    if (cnpj) configDistribuicao.cnpj = cnpj;
+    if (cpf) configDistribuicao.cpf = cpf;
 
     console.log('[DFE] Configuração montada para DistribuicaoDFe:', {
       possuiCnpj: !!configDistribuicao.cnpj,
@@ -15805,7 +15831,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       console.log('[DFE] Nenhum CPF/CNPJ informado para a consulta');
       return res.status(400).json({
         success: false,
-        message: 'Informe um CPF, um CNPJ ou implemente a leitura automática do documento a partir do certificado.'
+        message: 'Informe um CPF ou CNPJ para a consulta. Se quiser aceitar vazio, implemente a extração automática do documento a partir do certificado.'
       });
     }
 
@@ -15826,7 +15852,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     });
 
     if (consulta?.error) {
-      console.log('[DFE] Consulta retornou erro de negócio:', consulta.error);
+      console.log('[DFE] Consulta retornou erro da biblioteca:', consulta.error);
       return res.status(400).json({
         success: false,
         message: `Falha no retorno da distribuição DF-e: ${consulta.error}`
@@ -15834,10 +15860,58 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     }
 
     const data = consulta?.data || {};
+    const cStat = String(data?.cStat || '');
+    const xMotivo = String(data?.xMotivo || '');
+    const ultNSURetorno = String(data?.ultNSU || ultNSU);
+    const maxNSURetorno = String(data?.maxNSU || ultNSU);
+    const documentoUsado = cnpj || cpf || '';
+    const tipoDocumentoUsado = cnpj ? 'CNPJ' : cpf ? 'CPF' : '';
+
+    if (cStat === '656') {
+      console.log('[DFE] Consumo indevido detectado');
+      return res.status(400).json({
+        success: false,
+        message: montarMensagemCStat(cStat, xMotivo, ultNSURetorno, maxNSURetorno),
+        meta: {
+          tpAmb: data?.tpAmb || tpAmb,
+          ultNSU: ultNSURetorno,
+          maxNSU: maxNSURetorno,
+          cStat,
+          xMotivo,
+          documentoUsado,
+          tipoDocumentoUsado,
+          origemDocumento: documento ? 'informado' : 'certificado',
+          consultaSemDocumento,
+          limiteAplicado: limiteFinal
+        }
+      });
+    }
+
+    if (['472', '593'].includes(cStat)) {
+      console.log('[DFE] Documento informado diverge do certificado', { cStat, xMotivo });
+      return res.status(mapearStatusHttpPorCStat(cStat)).json({
+        success: false,
+        message: montarMensagemCStat(cStat, xMotivo, ultNSURetorno, maxNSURetorno),
+        meta: {
+          tpAmb: data?.tpAmb || tpAmb,
+          ultNSU: ultNSURetorno,
+          maxNSU: maxNSURetorno,
+          cStat,
+          xMotivo,
+          documentoUsado,
+          tipoDocumentoUsado,
+          origemDocumento: documento ? 'informado' : 'certificado',
+          consultaSemDocumento,
+          limiteAplicado: limiteFinal
+        }
+      });
+    }
+
     let docs = normalizarDocsConsulta(data?.docZip || []);
 
     console.log('[DFE] Documentos normalizados:', {
-      quantidadeAntesDoSlice: docs.length
+      quantidadeAntesDoSlice: docs.length,
+      cStat
     });
 
     docs = docs.slice(0, limiteFinal);
@@ -15866,33 +15940,40 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       lastAccessAt: Date.now(),
       cnpj,
       cpf,
+      documentoUsado,
       documentoInformado: documento || '',
       consultaSemDocumento,
       tpAmb,
       cUFAutor,
-      ultNSU: data?.ultNSU || ultNSU,
-      maxNSU: data?.maxNSU || ultNSU,
+      ultNSU: ultNSURetorno,
+      maxNSU: maxNSURetorno,
       items: docs
     });
 
     console.log('[DFE] Sessão criada com sucesso:', {
       sessionId,
       quantidadeItens: docs.length,
-      ultNSU: data?.ultNSU || ultNSU,
-      maxNSU: data?.maxNSU || ultNSU
+      ultNSU: ultNSURetorno,
+      maxNSU: maxNSURetorno,
+      cStat
     });
 
-    const qtd = docs.length;
-    const documentoUsado = cnpj || cpf || '';
-    const tipoDocumentoUsado = cnpj ? 'CNPJ' : cpf ? 'CPF' : '';
+    let msgConsulta = 'Consulta concluída com sucesso.';
 
-    const msgConsulta = consultaSemDocumento
-      ? `Consulta concluída com sucesso. ${qtd} documento(s) retornado(s).`
-      : `Consulta concluída com sucesso. ${qtd} documento(s) retornado(s) para o ${tipoDocumentoUsado} informado.`;
+    if (cStat === '138') {
+      msgConsulta = consultaSemDocumento
+        ? `Consulta concluída com sucesso. ${docs.length} documento(s) retornado(s) para o certificado.`
+        : `Consulta concluída com sucesso. ${docs.length} documento(s) retornado(s) para o ${tipoDocumentoUsado} informado.`;
+    } else if (cStat === '137') {
+      msgConsulta = montarMensagemCStat(cStat, xMotivo, ultNSURetorno, maxNSURetorno);
+    } else if (xMotivo) {
+      msgConsulta = xMotivo;
+    }
 
     console.log('[DFE] Finalizando rota com sucesso:', {
       sessionId,
-      mensagem: msgConsulta
+      mensagem: msgConsulta,
+      cStat
     });
 
     return res.json({
@@ -15902,10 +15983,10 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       items: docs.map(({ xml, json, ...rest }) => rest),
       meta: {
         tpAmb: data?.tpAmb || tpAmb,
-        ultNSU: data?.ultNSU || ultNSU,
-        maxNSU: data?.maxNSU || ultNSU,
-        cStat: data?.cStat || '',
-        xMotivo: data?.xMotivo || '',
+        ultNSU: ultNSURetorno,
+        maxNSU: maxNSURetorno,
+        cStat,
+        xMotivo,
         documentoUsado,
         tipoDocumentoUsado,
         origemDocumento: documento ? 'informado' : 'certificado',
