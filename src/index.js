@@ -14796,6 +14796,312 @@ app.put('/api/estoque/transferencias/:id', async (req, res) => {
 
 
 
+// Notificação monitoramento de Ping  //
+// ---------------------------------- //
+
+app.get('/apiusuarios', async (req, res) => {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+    const items = await listarUsuariosAtivosComTelefone(conn);
+
+    return res.json({
+      success: true,
+      items
+    });
+  } catch (err) {
+    console.error('Erro ao listar usuários:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar usuários.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+function parseIntSeguro(valor, padrao = 0) {
+  const n = Number.parseInt(valor, 10);
+  return Number.isFinite(n) ? n : padrao;
+}
+
+async function listarUsuariosAtivosComTelefone(conn) {
+  const [rows] = await conn.query(`
+    SELECT
+      id,
+      nome,
+      EMAIL,
+      TELEFONE,
+      CENTRO_CUSTO,
+      status
+    FROM SF_USUARIO
+    WHERE status = 'Ativo'
+      AND TELEFONE IS NOT NULL
+      AND TELEFONE <> ''
+    ORDER BY nome
+  `);
+
+  return rows;
+}
+
+async function listarContatosMonitor(conn, monitorId) {
+  const [rows] = await conn.query(
+    `
+    SELECT
+      c.ID,
+      c.MONITOR_ID,
+      c.TIPO_CONTATO,
+      c.USUARIO_ID,
+      c.NOME_CONTATO,
+      c.TELEFONE,
+      c.ATIVO,
+      u.nome AS USUARIO_NOME,
+      u.EMAIL AS USUARIO_EMAIL
+    FROM SF_PING_MONITOR_CONTATO c
+    LEFT JOIN SF_USUARIO u ON u.id = c.USUARIO_ID
+    WHERE c.MONITOR_ID = ?
+      AND c.ATIVO = '1'
+    ORDER BY c.ID ASC
+    `,
+    [monitorId]
+  );
+
+  return rows;
+}
+
+async function verificarPingHost(ip) {
+  const resp = await ping.promise.probe(ip, {
+    timeout: 5,
+    extra: ['-c', '1']
+  });
+
+  return {
+    alive: !!resp.alive,
+    time: resp.time ? Number(resp.time) : null,
+    output: resp.output || ''
+  };
+}
+
+
+app.post('/api/ping-monitor', async (req, res) => {
+  let conn;
+
+  try {
+    const ip = textolivreTr(req.body.ip, 45);
+    const equipamento = textolivreTr(req.body.equipamento, 150);
+    const localizacao = textolivreTr(req.body.localizacao, 150);
+    const intervaloMinutos = parseIntSeguro(req.body.intervaloMinutos, 5);
+    const ativo = String(req.body.ativo ?? '1') === '1' ? '1' : '0';
+    const enviarWhatsApp = String(req.body.enviarWhatsApp ?? '1') === '1' ? '1' : '0';
+    const observacao = textolivreTr(req.body.observacao, 255);
+    const usuarioCadastro = textolivreTr(req.body.usuarioCadastro, 150) || 'SISTEMA';
+
+    if (!ip || !equipamento || !localizacao) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe IP, equipamento e localizacao.'
+      });
+    }
+
+    if (!(intervaloMinutos > 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um intervalo válido em minutos.'
+      });
+    }
+
+    conn = await pool.getConnection();
+
+    const [result] = await conn.query(
+      `
+      INSERT INTO SF_PING_MONITOR
+        (IP, EQUIPAMENTO, LOCALIZACAO, INTERVALO_MINUTOS, ATIVO, ENVIAR_WHATSAPP, OBSERVACAO, USUARIO_CADASTRO)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [ip, equipamento, localizacao, intervaloMinutos, ativo, enviarWhatsApp, observacao || null, usuarioCadastro]
+    );
+
+    return res.json({
+      success: true,
+      id: result.insertId,
+      message: 'Monitor cadastrado com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao cadastrar monitor:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao cadastrar monitor.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/ping-monitor', async (req, res) => {
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const [rows] = await conn.query(`
+      SELECT *
+      FROM SF_PING_MONITOR
+      ORDER BY ID DESC
+    `);
+
+    return res.json({ success: true, items: rows });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar monitores.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/ping-monitor/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const id = Number(req.params.id);
+    const ip = textolivreTr(req.body.ip, 45);
+    const equipamento = textolivreTr(req.body.equipamento, 150);
+    const localizacao = textolivreTr(req.body.localizacao, 150);
+    const intervaloMinutos = parseIntSeguro(req.body.intervaloMinutos, 5);
+    const ativo = String(req.body.ativo ?? '1') === '1' ? '1' : '0';
+    const enviarWhatsApp = String(req.body.enviarWhatsApp ?? '1') === '1' ? '1' : '0';
+    const observacao = textolivreTr(req.body.observacao, 255);
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'ID inválido.' });
+    }
+
+    conn = await pool.getConnection();
+
+    const [result] = await conn.query(
+      `
+      UPDATE SF_PING_MONITOR
+      SET IP = ?, EQUIPAMENTO = ?, LOCALIZACAO = ?, INTERVALO_MINUTOS = ?, ATIVO = ?, ENVIAR_WHATSAPP = ?, OBSERVACAO = ?
+      WHERE ID = ?
+      `,
+      [ip, equipamento, localizacao, intervaloMinutos, ativo, enviarWhatsApp, observacao || null, id]
+    );
+
+    return res.json({
+      success: true,
+      affectedRows: result.affectedRows,
+      message: 'Monitor atualizado com sucesso.'
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar monitor.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/ping-monitor/:id/contatos', async (req, res) => {
+  let conn;
+
+  try {
+    const monitorId = Number(req.params.id);
+    const contatos = Array.isArray(req.body.contatos) ? req.body.contatos : [];
+
+    if (!monitorId) {
+      return res.status(400).json({ success: false, message: 'Monitor inválido.' });
+    }
+
+    if (!contatos.length) {
+      return res.status(400).json({ success: false, message: 'Informe ao menos um contato.' });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    await conn.query(`DELETE FROM SF_PING_MONITOR_CONTATO WHERE MONITOR_ID = ?`, [monitorId]);
+
+    for (const item of contatos) {
+      const tipoContato = String(item.tipoContato || 'MANUAL').toUpperCase();
+      const usuarioId = item.usuarioId ? Number(item.usuarioId) : null;
+      const nomeContato = textolivreTr(item.nomeContato, 150);
+      const telefone = textolivreTr(item.telefone, 20);
+
+      if (!telefone) continue;
+
+      await conn.query(
+        `
+        INSERT INTO SF_PING_MONITOR_CONTATO
+          (MONITOR_ID, TIPO_CONTATO, USUARIO_ID, NOME_CONTATO, TELEFONE)
+        VALUES (?, ?, ?, ?, ?)
+        `,
+        [
+          monitorId,
+          ['USUARIO', 'MANUAL'].includes(tipoContato) ? tipoContato : 'MANUAL',
+          usuarioId || null,
+          nomeContato || null,
+          telefone
+        ]
+      );
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      message: 'Contatos salvos com sucesso.'
+    });
+  } catch (err) {
+    if (conn) await conn.rollback().catch(() => {});
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao salvar contatos.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.delete('/api/ping-monitor/:id', async (req, res) => {
+  let conn;
+
+  try {
+    const id = Number(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'ID inválido.' });
+    }
+
+    conn = await pool.getConnection();
+
+    const [result] = await conn.query(`DELETE FROM SF_PING_MONITOR WHERE ID = ?`, [id]);
+
+    return res.json({
+      success: true,
+      affectedRows: result.affectedRows,
+      message: 'Monitor excluído com sucesso.'
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir monitor.',
+      error: err.message
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+
+
 // =====================
 // Inicia servidor (sempre por último)
 // =====================
