@@ -8244,7 +8244,8 @@ app.get('/api/permissoes/menu/:usuarioId', async (req, res) => {
         COALESCE(p.gestao_usuarios, 0) AS gestao_usuarios,
         COALESCE(p.estoque, 0) AS estoque,
         COALESCE(p.perfil_acesso, 0) AS perfil_acesso,
-        COALESCE(p.reservar_carro, 0) AS reservar_carro
+        COALESCE(p.reservar_carro, 0) AS reservar_carro,
+        COALESCE(p.monitor_ping, 0) AS monitor_ping
       FROM SF_USUARIO u
       LEFT JOIN SF_PERFIL p ON p.nome = u.perfil
       WHERE u.ID = ?
@@ -8275,7 +8276,8 @@ app.get('/api/permissoes/menu/:usuarioId', async (req, res) => {
         gestaousuarios: Number(item.gestao_usuarios ?? 0),
         estoque: Number(item.estoque ?? 0),
         perfilacesso: Number(item.perfil_acesso ?? 0),
-        reservarcarro: Number(item.reservar_carro ?? 0)
+        reservarcarro: Number(item.reservar_carro ?? 0),
+        monitorping: Number(item.monitor_ping ?? 0)
       }
     };
 
