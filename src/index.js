@@ -16789,6 +16789,258 @@ app.get('/api/equipamentos/:id/afd', async (req, res) => {
   }
 });
 
+// Cadastro de calendarios
+
+app.get('/api/calendarios', async (req, res) => {
+  try {
+    const rows = await pool.query(`
+      SELECT
+        ID,
+        UNIDADETRABALHO,
+        PERIODO,
+        TIME_FORMAT(HORAINICIO, '%H:%i') AS HORAINICIO,
+        TIME_FORMAT(HORAFIM, '%H:%i') AS HORAFIM,
+        STATUS,
+        DATACADASTRO,
+        DATAALTERACAO
+      FROM SF_CALENDARIO
+      ORDER BY ID DESC
+    `);
+
+    return res.json({
+      success: true,
+      items: rows
+    });
+  } catch (err) {
+    console.error('Erro ao listar calendários:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar calendários.',
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/calendarios/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID inválido.'
+      });
+    }
+
+    const rows = await pool.query(`
+      SELECT
+        ID,
+        UNIDADETRABALHO,
+        PERIODO,
+        TIME_FORMAT(HORAINICIO, '%H:%i') AS HORAINICIO,
+        TIME_FORMAT(HORAFIM, '%H:%i') AS HORAFIM,
+        STATUS
+      FROM SF_CALENDARIO
+      WHERE ID = ?
+      LIMIT 1
+    `, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Calendário não encontrado.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      item: rows[0]
+    });
+  } catch (err) {
+    console.error('Erro ao buscar calendário:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar calendário.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/calendarios', async (req, res) => {
+  try {
+    const unidadeTrabalho = String(req.body?.unidadeTrabalho ?? '').trim();
+    const periodo = String(req.body?.periodo ?? '').trim();
+    const horaInicio = String(req.body?.horaInicio ?? '').trim();
+    const horaFim = String(req.body?.horaFim ?? '').trim();
+    const status = String(req.body?.status ?? '').trim() || 'Ativo';
+    const usuario = String(req.body?.usuario ?? '').trim() || 'SISTEMA';
+
+    if (!unidadeTrabalho) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a unidade de trabalho.'
+      });
+    }
+
+    if (!periodo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o período.'
+      });
+    }
+
+    if (!horaInicio) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a hora de início.'
+      });
+    }
+
+    if (!horaFim) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a hora de fim.'
+      });
+    }
+
+    const result = await pool.query(`
+      INSERT INTO SF_CALENDARIO (
+        UNIDADETRABALHO,
+        PERIODO,
+        HORAINICIO,
+        HORAFIM,
+        STATUS,
+        USUARIOCADASTRO
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      unidadeTrabalho,
+      periodo,
+      horaInicio,
+      horaFim,
+      status,
+      usuario
+    ]);
+
+    return res.status(201).json({
+      success: true,
+      id: result.insertId,
+      message: 'Calendário cadastrado com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao cadastrar calendário:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao cadastrar calendário.',
+      error: err.message
+    });
+  }
+});
+
+app.put('/api/calendarios/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const unidadeTrabalho = String(req.body?.unidadeTrabalho ?? '').trim();
+    const periodo = String(req.body?.periodo ?? '').trim();
+    const horaInicio = String(req.body?.horaInicio ?? '').trim();
+    const horaFim = String(req.body?.horaFim ?? '').trim();
+    const status = String(req.body?.status ?? '').trim();
+    const usuario = String(req.body?.usuario ?? '').trim() || 'SISTEMA';
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID inválido.'
+      });
+    }
+
+    if (!unidadeTrabalho || !periodo || !horaInicio || !horaFim || !status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Preencha todos os campos obrigatórios.'
+      });
+    }
+
+    const result = await pool.query(`
+      UPDATE SF_CALENDARIO
+      SET
+        UNIDADETRABALHO = ?,
+        PERIODO = ?,
+        HORAINICIO = ?,
+        HORAFIM = ?,
+        STATUS = ?,
+        USUARIOALTERACAO = ?,
+        DATAALTERACAO = NOW()
+      WHERE ID = ?
+    `, [
+      unidadeTrabalho,
+      periodo,
+      horaInicio,
+      horaFim,
+      status,
+      usuario,
+      id
+    ]);
+
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Calendário não encontrado.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Calendário atualizado com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao atualizar calendário:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar calendário.',
+      error: err.message
+    });
+  }
+});
+
+app.delete('/api/calendarios/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID inválido.'
+      });
+    }
+
+    const result = await pool.query(`
+      DELETE FROM SF_CALENDARIO
+      WHERE ID = ?
+    `, [id]);
+
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Calendário não encontrado.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Calendário excluído com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao excluir calendário:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir calendário.',
+      error: err.message
+    });
+  }
+});
+
+
+
 
 
 // =====================
