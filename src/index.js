@@ -16903,7 +16903,7 @@ app.post('/api/calendarios', async (req, res) => {
       });
     }
 
-    const result = await pool.query(`
+    const [result] = await pool.query(`
       INSERT INTO SF_CALENDARIO (
         UNIDADETRABALHO,
         PERIODO,
