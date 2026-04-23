@@ -16793,7 +16793,7 @@ app.get('/api/equipamentos/:id/afd', async (req, res) => {
 
 app.get('/api/calendarios', async (req, res) => {
   try {
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         UNIDADETRABALHO,
@@ -16832,7 +16832,7 @@ app.get('/api/calendarios/:id', async (req, res) => {
       });
     }
 
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         UNIDADETRABALHO,
@@ -16960,7 +16960,7 @@ app.put('/api/calendarios/:id', async (req, res) => {
       });
     }
 
-    const result = await pool.query(`
+    const [result] = await pool.query(`
       UPDATE SF_CALENDARIO
       SET
         UNIDADETRABALHO = ?,
@@ -17013,7 +17013,7 @@ app.delete('/api/calendarios/:id', async (req, res) => {
       });
     }
 
-    const result = await pool.query(`
+    const [result] = await pool.query(`
       DELETE FROM SF_CALENDARIO
       WHERE ID = ?
     `, [id]);
