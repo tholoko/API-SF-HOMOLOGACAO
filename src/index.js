@@ -16789,7 +16789,9 @@ app.get('/api/equipamentos/:id/afd', async (req, res) => {
   }
 });
 
-// Cadastro de calendarios
+// ===============================
+// CADASTRO DE CALENDÁRIOS
+// ===============================
 
 app.get('/api/calendarios', async (req, res) => {
   try {
@@ -16798,9 +16800,16 @@ app.get('/api/calendarios', async (req, res) => {
         ID,
         UNIDADETRABALHO,
         PERIODO,
+        TIPOPERIODO,
+        DATE_FORMAT(DATAINICIAL, '%Y-%m-%d') AS DATAINICIAL,
+        DATE_FORMAT(DATAFINAL, '%Y-%m-%d') AS DATAFINAL,
+        REPETETODOANO,
         TIME_FORMAT(HORAINICIO, '%H:%i') AS HORAINICIO,
         TIME_FORMAT(HORAFIM, '%H:%i') AS HORAFIM,
         STATUS,
+        USUARIOCADASTRO,
+        USUARIOALTERACAO,
+        OBSERVACAO,
         DATACADASTRO,
         DATAALTERACAO
       FROM SF_CALENDARIO
@@ -16837,9 +16846,18 @@ app.get('/api/calendarios/:id', async (req, res) => {
         ID,
         UNIDADETRABALHO,
         PERIODO,
+        TIPOPERIODO,
+        DATE_FORMAT(DATAINICIAL, '%Y-%m-%d') AS DATAINICIAL,
+        DATE_FORMAT(DATAFINAL, '%Y-%m-%d') AS DATAFINAL,
+        REPETETODOANO,
         TIME_FORMAT(HORAINICIO, '%H:%i') AS HORAINICIO,
         TIME_FORMAT(HORAFIM, '%H:%i') AS HORAFIM,
-        STATUS
+        STATUS,
+        USUARIOCADASTRO,
+        USUARIOALTERACAO,
+        OBSERVACAO,
+        DATACADASTRO,
+        DATAALTERACAO
       FROM SF_CALENDARIO
       WHERE ID = ?
       LIMIT 1
@@ -16870,10 +16888,17 @@ app.post('/api/calendarios', async (req, res) => {
   try {
     const unidadeTrabalho = String(req.body?.unidadeTrabalho ?? '').trim();
     const periodo = String(req.body?.periodo ?? '').trim();
+    const tipoPeriodo = String(req.body?.tipoPeriodo ?? '').trim().toLowerCase();
+    const dataInicial = String(req.body?.dataInicial ?? '').trim();
+    const dataFinalRaw = String(req.body?.dataFinal ?? '').trim();
+    const repeteTodoAno = String(req.body?.repeteTodoAno ?? 'N').trim().toUpperCase();
     const horaInicio = String(req.body?.horaInicio ?? '').trim();
     const horaFim = String(req.body?.horaFim ?? '').trim();
-    const status = String(req.body?.status ?? '').trim() || 'Ativo';
+    const status = String(req.body?.status ?? 'Ativo').trim() || 'Ativo';
     const usuario = String(req.body?.usuario ?? '').trim() || 'SISTEMA';
+    const observacao = String(req.body?.observacao ?? '').trim();
+
+    const dataFinal = tipoPeriodo === 'intervalo' ? dataFinalRaw : null;
 
     if (!unidadeTrabalho) {
       return res.status(400).json({
@@ -16882,10 +16907,38 @@ app.post('/api/calendarios', async (req, res) => {
       });
     }
 
+    if (!tipoPeriodo || !['data', 'intervalo'].includes(tipoPeriodo)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um tipo de período válido.'
+      });
+    }
+
     if (!periodo) {
       return res.status(400).json({
         success: false,
         message: 'Informe o período.'
+      });
+    }
+
+    if (!dataInicial) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a data inicial.'
+      });
+    }
+
+    if (tipoPeriodo === 'intervalo' && !dataFinal) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a data final.'
+      });
+    }
+
+    if (tipoPeriodo === 'intervalo' && dataFinal < dataInicial) {
+      return res.status(400).json({
+        success: false,
+        message: 'A data final não pode ser menor que a data inicial.'
       });
     }
 
@@ -16907,18 +16960,29 @@ app.post('/api/calendarios', async (req, res) => {
       INSERT INTO SF_CALENDARIO (
         UNIDADETRABALHO,
         PERIODO,
+        TIPOPERIODO,
+        DATAINICIAL,
+        DATAFINAL,
+        REPETETODOANO,
         HORAINICIO,
         HORAFIM,
         STATUS,
-        USUARIOCADASTRO
-      ) VALUES (?, ?, ?, ?, ?, ?)
+        USUARIOCADASTRO,
+        OBSERVACAO,
+        DATACADASTRO
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `, [
       unidadeTrabalho,
       periodo,
+      tipoPeriodo,
+      dataInicial,
+      dataFinal,
+      repeteTodoAno === 'S' ? 'S' : 'N',
       horaInicio,
       horaFim,
       status,
-      usuario
+      usuario,
+      observacao || null
     ]);
 
     return res.status(201).json({
@@ -16941,10 +17005,17 @@ app.put('/api/calendarios/:id', async (req, res) => {
     const id = Number(req.params.id);
     const unidadeTrabalho = String(req.body?.unidadeTrabalho ?? '').trim();
     const periodo = String(req.body?.periodo ?? '').trim();
+    const tipoPeriodo = String(req.body?.tipoPeriodo ?? '').trim().toLowerCase();
+    const dataInicial = String(req.body?.dataInicial ?? '').trim();
+    const dataFinalRaw = String(req.body?.dataFinal ?? '').trim();
+    const repeteTodoAno = String(req.body?.repeteTodoAno ?? 'N').trim().toUpperCase();
     const horaInicio = String(req.body?.horaInicio ?? '').trim();
     const horaFim = String(req.body?.horaFim ?? '').trim();
-    const status = String(req.body?.status ?? '').trim();
+    const status = String(req.body?.status ?? '').trim() || 'Ativo';
     const usuario = String(req.body?.usuario ?? '').trim() || 'SISTEMA';
+    const observacao = String(req.body?.observacao ?? '').trim();
+
+    const dataFinal = tipoPeriodo === 'intervalo' ? dataFinalRaw : null;
 
     if (!id) {
       return res.status(400).json({
@@ -16953,10 +17024,59 @@ app.put('/api/calendarios/:id', async (req, res) => {
       });
     }
 
-    if (!unidadeTrabalho || !periodo || !horaInicio || !horaFim || !status) {
+    if (!unidadeTrabalho) {
       return res.status(400).json({
         success: false,
-        message: 'Preencha todos os campos obrigatórios.'
+        message: 'Informe a unidade de trabalho.'
+      });
+    }
+
+    if (!tipoPeriodo || !['data', 'intervalo'].includes(tipoPeriodo)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um tipo de período válido.'
+      });
+    }
+
+    if (!periodo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe o período.'
+      });
+    }
+
+    if (!dataInicial) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a data inicial.'
+      });
+    }
+
+    if (tipoPeriodo === 'intervalo' && !dataFinal) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a data final.'
+      });
+    }
+
+    if (tipoPeriodo === 'intervalo' && dataFinal < dataInicial) {
+      return res.status(400).json({
+        success: false,
+        message: 'A data final não pode ser menor que a data inicial.'
+      });
+    }
+
+    if (!horaInicio) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a hora de início.'
+      });
+    }
+
+    if (!horaFim) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a hora de fim.'
       });
     }
 
@@ -16965,19 +17085,29 @@ app.put('/api/calendarios/:id', async (req, res) => {
       SET
         UNIDADETRABALHO = ?,
         PERIODO = ?,
+        TIPOPERIODO = ?,
+        DATAINICIAL = ?,
+        DATAFINAL = ?,
+        REPETETODOANO = ?,
         HORAINICIO = ?,
         HORAFIM = ?,
         STATUS = ?,
         USUARIOALTERACAO = ?,
+        OBSERVACAO = ?,
         DATAALTERACAO = NOW()
       WHERE ID = ?
     `, [
       unidadeTrabalho,
       periodo,
+      tipoPeriodo,
+      dataInicial,
+      dataFinal,
+      repeteTodoAno === 'S' ? 'S' : 'N',
       horaInicio,
       horaFim,
       status,
       usuario,
+      observacao || null,
       id
     ]);
 
@@ -17038,9 +17168,6 @@ app.delete('/api/calendarios/:id', async (req, res) => {
     });
   }
 });
-
-
-
 
 
 // =====================
