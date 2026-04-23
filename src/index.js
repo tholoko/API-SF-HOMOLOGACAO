@@ -16310,7 +16310,7 @@ function validarPayloadEquipamento(body = {}) {
 
 app.get('/api/equipamentos', async (req, res) => {
   try {
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         CODIGO,
@@ -16352,7 +16352,7 @@ app.get('/api/equipamentos/:id', async (req, res) => {
       });
     }
 
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         CODIGO,
@@ -16468,7 +16468,7 @@ app.put('/api/equipamentos/:id', async (req, res) => {
       id
     });
 
-    const rows = await pool.query(
+    const [rows] = await pool.query(
       'SELECT ID FROM SF_EQUIPAMENTO WHERE ID = ? LIMIT 1',
       [id]
     );
@@ -16601,7 +16601,7 @@ app.post('/api/equipamentos/testar-comunicacao', async (req, res) => {
 app.post('/api/equipamentos/:id/testar-comunicacao', async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         CODIGO,
@@ -16659,7 +16659,7 @@ app.get('/api/equipamentos/:id/about', async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
 
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         CODIGO,
@@ -16707,7 +16707,7 @@ app.get('/api/equipamentos/:id/afd', async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
 
-    const rows = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT
         ID,
         CODIGO,
