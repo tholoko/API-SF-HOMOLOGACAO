@@ -17,6 +17,10 @@ import ping from 'ping';
 import { DistribuicaoDFe } from 'node-mde';
 import AdmZip from 'adm-zip';
 import zlib from 'node:zlib';
+import https from 'node:https';
+import http from 'node:http';
+import https from 'node:https';
+
 
 import { titleCaseNome, normalizarEmail, somenteNumeros } from './utils.js';
 
@@ -16114,6 +16118,641 @@ app.post('/api/dfe/xml-lote', async (req, res) => {
     });
   }
 });
+
+// Equipamentos Relogio POnto
+
+function textoLivreEquip(v, max = 255) {
+  return String(v ?? '').trim().slice(0, max);
+}
+
+function validarIPv4(ip) {
+  const partes = String(ip || '').trim().split('.');
+  if (partes.length !== 4) return false;
+
+  return partes.every(parte => {
+    if (!/^\d+$/.test(parte)) return false;
+    const n = Number(parte);
+    return n >= 0 && n <= 255;
+  });
+}
+
+function normalizarProtocoloEquipamento(v) {
+  return String(v || '').trim().toLowerCase() === 'https' ? 'https' : 'http';
+}
+
+function normalizarTipoAfd(v) {
+  return String(v || '').trim() === '1510' ? '1510' : '671';
+}
+
+function obterPortaPadraoEquipamento(protocolo) {
+  return normalizarProtocoloEquipamento(protocolo) === 'https' ? 443 : 80;
+}
+
+function montarBaseUrlEquipamento({ protocolo, ip, porta }) {
+  const protocoloFinal = normalizarProtocoloEquipamento(protocolo);
+  const portaFinal = Number(porta) || obterPortaPadraoEquipamento(protocoloFinal);
+  return `${protocoloFinal}://${ip}:${portaFinal}`;
+}
+
+function getAgentByProtocol(protocolo) {
+  if (normalizarProtocoloEquipamento(protocolo) === 'https') {
+    return new https.Agent({
+      rejectUnauthorized: false
+    });
+  }
+
+  return new http.Agent();
+}
+
+async function fetchControlIdJson(url, options = {}, protocolo = 'http') {
+  const agent = getAgentByProtocol(protocolo);
+
+  const response = await fetch(url, {
+    ...options,
+    agent
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  let data = null;
+
+  if (contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    const text = await response.text();
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+  }
+
+  return { response, data };
+}
+
+async function fazerLoginControlId(equipamento) {
+  const baseUrl = montarBaseUrlEquipamento(equipamento);
+
+  const { response, data } = await fetchControlIdJson(
+    `${baseUrl}/login.fcgi`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        login: equipamento.usuario,
+        password: equipamento.senha
+      })
+    },
+    equipamento.protocolo
+  );
+
+  if (!response.ok) {
+    throw new Error(`Falha no login do equipamento. HTTP ${response.status}`);
+  }
+
+  if (!data?.session) {
+    throw new Error('Sessão não retornada pelo equipamento.');
+  }
+
+  return {
+    session: data.session,
+    loginResponse: data,
+    baseUrl
+  };
+}
+
+async function obterAboutControlId(equipamento, session) {
+  const baseUrl = montarBaseUrlEquipamento(equipamento);
+
+  const { response, data } = await fetchControlIdJson(
+    `${baseUrl}/get_about.fcgi?session=${encodeURIComponent(session)}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    },
+    equipamento.protocolo
+  );
+
+  if (!response.ok) {
+    throw new Error(`Falha ao consultar get_about.fcgi. HTTP ${response.status}`);
+  }
+
+  return data;
+}
+
+async function obterAfdControlId(equipamento, session) {
+  const baseUrl = montarBaseUrlEquipamento(equipamento);
+  const mode = String(equipamento.tipoAfd) === '671' ? '&mode=671' : '';
+  const url = `${baseUrl}/get_afd.fcgi?session=${encodeURIComponent(session)}${mode}`;
+
+  const agent = getAgentByProtocol(equipamento.protocolo);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    agent
+  });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao obter AFD. HTTP ${response.status}`);
+  }
+
+  const afd = await response.text();
+  return afd;
+}
+
+function mapearEquipamentoDb(row) {
+  return {
+    id: String(row.ID),
+    codigo: row.CODIGO ?? '',
+    descricao: row.DESCRICAO ?? '',
+    numeroSerie: row.NUMEROSERIE ?? '',
+    status: row.STATUS ?? '',
+    local: row.LOCALSETOR ?? '',
+    ip: row.IP ?? '',
+    protocolo: normalizarProtocoloEquipamento(row.PROTOCOLO),
+    porta: Number(row.PORTA) || obterPortaPadraoEquipamento(row.PROTOCOLO),
+    usuario: row.USUARIO ?? '',
+    senha: row.SENHA ?? '',
+    tipoAfd: normalizarTipoAfd(row.TIPOAFD)
+  };
+}
+
+function validarPayloadEquipamento(body = {}) {
+  const payload = {
+    id: String(body.id || Date.now()),
+    codigo: textoLivreEquip(body.codigo, 50),
+    descricao: textoLivreEquip(body.descricao, 150),
+    numeroSerie: textoLivreEquip(body.numeroSerie, 100),
+    status: textoLivreEquip(body.status, 30),
+    local: textoLivreEquip(body.local, 150),
+    ip: textoLivreEquip(body.ip, 50),
+    protocolo: normalizarProtocoloEquipamento(body.protocolo),
+    porta: Number(body.porta) || obterPortaPadraoEquipamento(body.protocolo),
+    usuario: textoLivreEquip(body.usuario, 100),
+    senha: textoLivreEquip(body.senha, 255),
+    tipoAfd: normalizarTipoAfd(body.tipoAfd)
+  };
+
+  if (!payload.codigo) throw new Error('Informe o código do equipamento.');
+  if (!payload.descricao) throw new Error('Informe a descrição do equipamento.');
+  if (!payload.status) throw new Error('Selecione o status do equipamento.');
+  if (!payload.ip) throw new Error('Informe o IP do equipamento.');
+  if (!validarIPv4(payload.ip)) throw new Error('Informe um IP válido.');
+  if (!payload.usuario) throw new Error('Informe o usuário do equipamento.');
+  if (!payload.senha) throw new Error('Informe a senha do equipamento.');
+
+  return payload;
+}
+
+app.get('/api/equipamentos', async (req, res) => {
+  try {
+    const rows = await pool.query(`
+      SELECT
+        ID,
+        CODIGO,
+        DESCRICAO,
+        NUMEROSERIE,
+        STATUS,
+        LOCALSETOR,
+        IP,
+        PROTOCOLO,
+        PORTA,
+        USUARIO,
+        SENHA,
+        TIPOAFD
+      FROM SF_EQUIPAMENTO
+      ORDER BY CREATEDAT DESC, ID DESC
+    `);
+
+    return res.json({
+      success: true,
+      items: rows.map(mapearEquipamentoDb)
+    });
+  } catch (err) {
+    console.error('Erro GET /api/equipamentos', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar equipamentos.',
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/equipamentos/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID do equipamento inválido.'
+      });
+    }
+
+    const rows = await pool.query(`
+      SELECT
+        ID,
+        CODIGO,
+        DESCRICAO,
+        NUMEROSERIE,
+        STATUS,
+        LOCALSETOR,
+        IP,
+        PROTOCOLO,
+        PORTA,
+        USUARIO,
+        SENHA,
+        TIPOAFD
+      FROM SF_EQUIPAMENTO
+      WHERE ID = ?
+      LIMIT 1
+    `, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Equipamento não encontrado.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      item: mapearEquipamentoDb(rows[0])
+    });
+  } catch (err) {
+    console.error('Erro GET /api/equipamentos/:id', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar equipamento.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/equipamentos', async (req, res) => {
+  try {
+    const payload = validarPayloadEquipamento(req.body);
+
+    const existente = await pool.query(
+      'SELECT ID FROM SF_EQUIPAMENTO WHERE ID = ? LIMIT 1',
+      [payload.id]
+    );
+
+    if (existente.length) {
+      return res.status(409).json({
+        success: false,
+        message: 'Já existe um equipamento com esse ID.'
+      });
+    }
+
+    await pool.query(`
+      INSERT INTO SF_EQUIPAMENTO (
+        ID,
+        CODIGO,
+        DESCRICAO,
+        NUMEROSERIE,
+        STATUS,
+        LOCALSETOR,
+        IP,
+        PROTOCOLO,
+        PORTA,
+        USUARIO,
+        SENHA,
+        TIPOAFD,
+        CREATEDAT
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    `, [
+      payload.id,
+      payload.codigo,
+      payload.descricao,
+      payload.numeroSerie,
+      payload.status,
+      payload.local,
+      payload.ip,
+      payload.protocolo,
+      payload.porta,
+      payload.usuario,
+      payload.senha,
+      payload.tipoAfd
+    ]);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Equipamento cadastrado com sucesso.',
+      item: payload
+    });
+  } catch (err) {
+    console.error('Erro POST /api/equipamentos', err);
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'Erro ao cadastrar equipamento.'
+    });
+  }
+});
+
+app.put('/api/equipamentos/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID do equipamento inválido.'
+      });
+    }
+
+    const payload = validarPayloadEquipamento({
+      ...req.body,
+      id
+    });
+
+    const rows = await pool.query(
+      'SELECT ID FROM SF_EQUIPAMENTO WHERE ID = ? LIMIT 1',
+      [id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Equipamento não encontrado.'
+      });
+    }
+
+    await pool.query(`
+      UPDATE SF_EQUIPAMENTO
+      SET
+        CODIGO = ?,
+        DESCRICAO = ?,
+        NUMEROSERIE = ?,
+        STATUS = ?,
+        LOCALSETOR = ?,
+        IP = ?,
+        PROTOCOLO = ?,
+        PORTA = ?,
+        USUARIO = ?,
+        SENHA = ?,
+        TIPOAFD = ?,
+        UPDATEDAT = NOW()
+      WHERE ID = ?
+    `, [
+      payload.codigo,
+      payload.descricao,
+      payload.numeroSerie,
+      payload.status,
+      payload.local,
+      payload.ip,
+      payload.protocolo,
+      payload.porta,
+      payload.usuario,
+      payload.senha,
+      payload.tipoAfd,
+      id
+    ]);
+
+    return res.json({
+      success: true,
+      message: 'Equipamento atualizado com sucesso.',
+      item: payload
+    });
+  } catch (err) {
+    console.error('Erro PUT /api/equipamentos/:id', err);
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'Erro ao atualizar equipamento.'
+    });
+  }
+});
+
+app.delete('/api/equipamentos/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID do equipamento inválido.'
+      });
+    }
+
+    const result = await pool.query(
+      'DELETE FROM SF_EQUIPAMENTO WHERE ID = ?',
+      [id]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Equipamento não encontrado.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Equipamento removido com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro DELETE /api/equipamentos/:id', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao remover equipamento.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/equipamentos/testar-comunicacao', async (req, res) => {
+  try {
+    const payload = validarPayloadEquipamento(req.body);
+
+    const { session, baseUrl } = await fazerLoginControlId(payload);
+
+    let about = null;
+    try {
+      about = await obterAboutControlId(payload, session);
+    } catch (errAbout) {
+      about = null;
+    }
+
+    return res.json({
+      success: true,
+      message: `Comunicação realizada com sucesso via ${payload.protocolo.toUpperCase()}.`,
+      session,
+      baseUrl,
+      equipamento: {
+        ip: payload.ip,
+        protocolo: payload.protocolo,
+        porta: payload.porta,
+        usuario: payload.usuario,
+        tipoAfd: payload.tipoAfd
+      },
+      about
+    });
+  } catch (err) {
+    console.error('Erro POST /api/equipamentos/testar-comunicacao', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Falha na comunicação com o equipamento.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/equipamentos/:id/testar-comunicacao', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const rows = await pool.query(`
+      SELECT
+        ID,
+        CODIGO,
+        DESCRICAO,
+        NUMEROSERIE,
+        STATUS,
+        LOCALSETOR,
+        IP,
+        PROTOCOLO,
+        PORTA,
+        USUARIO,
+        SENHA,
+        TIPOAFD
+      FROM SF_EQUIPAMENTO
+      WHERE ID = ?
+      LIMIT 1
+    `, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Equipamento não encontrado.'
+      });
+    }
+
+    const equipamento = mapearEquipamentoDb(rows[0]);
+    const { session, baseUrl } = await fazerLoginControlId(equipamento);
+
+    let about = null;
+    try {
+      about = await obterAboutControlId(equipamento, session);
+    } catch (errAbout) {
+      about = null;
+    }
+
+    return res.json({
+      success: true,
+      message: `Comunicação realizada com sucesso via ${equipamento.protocolo.toUpperCase()}.`,
+      session,
+      baseUrl,
+      equipamento,
+      about
+    });
+  } catch (err) {
+    console.error('Erro POST /api/equipamentos/:id/testar-comunicacao', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Falha na comunicação com o equipamento.',
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/equipamentos/:id/about', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+
+    const rows = await pool.query(`
+      SELECT
+        ID,
+        CODIGO,
+        DESCRICAO,
+        NUMEROSERIE,
+        STATUS,
+        LOCALSETOR,
+        IP,
+        PROTOCOLO,
+        PORTA,
+        USUARIO,
+        SENHA,
+        TIPOAFD
+      FROM SF_EQUIPAMENTO
+      WHERE ID = ?
+      LIMIT 1
+    `, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Equipamento não encontrado.'
+      });
+    }
+
+    const equipamento = mapearEquipamentoDb(rows[0]);
+    const { session } = await fazerLoginControlId(equipamento);
+    const about = await obterAboutControlId(equipamento, session);
+
+    return res.json({
+      success: true,
+      about
+    });
+  } catch (err) {
+    console.error('Erro GET /api/equipamentos/:id/about', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao consultar informações do equipamento.',
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/equipamentos/:id/afd', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+
+    const rows = await pool.query(`
+      SELECT
+        ID,
+        CODIGO,
+        DESCRICAO,
+        NUMEROSERIE,
+        STATUS,
+        LOCALSETOR,
+        IP,
+        PROTOCOLO,
+        PORTA,
+        USUARIO,
+        SENHA,
+        TIPOAFD
+      FROM SF_EQUIPAMENTO
+      WHERE ID = ?
+      LIMIT 1
+    `, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Equipamento não encontrado.'
+      });
+    }
+
+    const equipamento = mapearEquipamentoDb(rows[0]);
+    const { session } = await fazerLoginControlId(equipamento);
+    const afd = await obterAfdControlId(equipamento, session);
+
+    const nomeArquivo = `afd-${equipamento.codigo || equipamento.id}-${equipamento.tipoAfd}.txt`;
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo}"`);
+
+    return res.send(afd);
+  } catch (err) {
+    console.error('Erro GET /api/equipamentos/:id/afd', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao exportar AFD do equipamento.',
+      error: err.message
+    });
+  }
+});
+
 
 
 // =====================
