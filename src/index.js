@@ -16563,18 +16563,41 @@ app.delete('/api/equipamentos/:id', async (req, res) => {
 
 app.post('/api/equipamentos/testar-comunicacao', async (req, res) => {
   try {
+    console.log('--------------------------------------------------');
+    console.log('[POST] /api/equipamentos/testar-comunicacao');
+    console.log('[BODY RECEBIDO]', {
+      ...req.body,
+      senha: req.body?.senha ? '***' : ''
+    });
+
     const payload = validarPayloadEquipamento(req.body);
+    console.log('[PAYLOAD VALIDADO]', {
+      ...payload,
+      senha: payload?.senha ? '***' : ''
+    });
 
     const { session, baseUrl } = await fazerLoginControlId(payload);
+    console.log('[LOGIN OK]', {
+      baseUrl,
+      session,
+      ip: payload.ip,
+      protocolo: payload.protocolo,
+      porta: payload.porta,
+      usuario: payload.usuario,
+      tipoAfd: payload.tipoAfd
+    });
 
     let about = null;
+
     try {
       about = await obterAboutControlId(payload, session);
+      console.log('[ABOUT OK]', about);
     } catch (errAbout) {
+      console.log('[ABOUT ERRO]', errAbout.message);
       about = null;
     }
 
-    return res.json({
+    const resposta = {
       success: true,
       message: `Comunicação realizada com sucesso via ${payload.protocolo.toUpperCase()}.`,
       session,
@@ -16587,9 +16610,18 @@ app.post('/api/equipamentos/testar-comunicacao', async (req, res) => {
         tipoAfd: payload.tipoAfd
       },
       about
+    };
+
+    console.log('[RESPOSTA SUCESSO]', {
+      ...resposta,
+      session: resposta.session ? '***SESSION***' : null
     });
+
+    return res.json(resposta);
   } catch (err) {
     console.error('Erro POST /api/equipamentos/testar-comunicacao', err);
+    console.error('[STACK]', err.stack);
+
     return res.status(500).json({
       success: false,
       message: 'Falha na comunicação com o equipamento.',
