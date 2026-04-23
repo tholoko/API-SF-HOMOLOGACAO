@@ -16398,7 +16398,7 @@ app.post('/api/equipamentos', async (req, res) => {
   try {
     const payload = validarPayloadEquipamento(req.body);
 
-    const existente = await pool.query(
+    const [existente] = await pool.query(
       'SELECT ID FROM SF_EQUIPAMENTO WHERE ID = ? LIMIT 1',
       [payload.id]
     );
