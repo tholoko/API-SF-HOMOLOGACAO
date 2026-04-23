@@ -16393,6 +16393,8 @@ app.get('/api/equipamentos/:id', async (req, res) => {
 });
 
 app.post('/api/equipamentos', async (req, res) => {
+
+  console.log(req.body);
   try {
     const payload = validarPayloadEquipamento(req.body);
 
