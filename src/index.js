@@ -16441,6 +16441,7 @@ app.post('/api/equipamentos', async (req, res) => {
       payload.tipoAfd
     ]);
 
+
     return res.status(201).json({
       success: true,
       message: 'Equipamento cadastrado com sucesso.',
