@@ -16801,9 +16801,14 @@ app.get('/api/calendarios', async (req, res) => {
         UNIDADETRABALHO,
         PERIODO,
         TIPOPERIODO,
+        TIPORECORRENCIA,
         DATE_FORMAT(DATAINICIAL, '%Y-%m-%d') AS DATAINICIAL,
         DATE_FORMAT(DATAFINAL, '%Y-%m-%d') AS DATAFINAL,
         REPETETODOANO,
+        DATE_FORMAT(DATAINICIALTROCA, '%Y-%m-%d') AS DATAINICIALTROCA,
+        DATE_FORMAT(DATAFINALTROCA, '%Y-%m-%d') AS DATAFINALTROCA,
+        DATE_FORMAT(NOVADATAINICIAL, '%Y-%m-%d') AS NOVADATAINICIAL,
+        DATE_FORMAT(NOVADATAFINAL, '%Y-%m-%d') AS NOVADATAFINAL,
         TIME_FORMAT(HORAINICIO, '%H:%i') AS HORAINICIO,
         TIME_FORMAT(HORAFIM, '%H:%i') AS HORAFIM,
         STATUS,
@@ -16847,9 +16852,14 @@ app.get('/api/calendarios/:id', async (req, res) => {
         UNIDADETRABALHO,
         PERIODO,
         TIPOPERIODO,
+        TIPORECORRENCIA,
         DATE_FORMAT(DATAINICIAL, '%Y-%m-%d') AS DATAINICIAL,
         DATE_FORMAT(DATAFINAL, '%Y-%m-%d') AS DATAFINAL,
         REPETETODOANO,
+        DATE_FORMAT(DATAINICIALTROCA, '%Y-%m-%d') AS DATAINICIALTROCA,
+        DATE_FORMAT(DATAFINALTROCA, '%Y-%m-%d') AS DATAFINALTROCA,
+        DATE_FORMAT(NOVADATAINICIAL, '%Y-%m-%d') AS NOVADATAINICIAL,
+        DATE_FORMAT(NOVADATAFINAL, '%Y-%m-%d') AS NOVADATAFINAL,
         TIME_FORMAT(HORAINICIO, '%H:%i') AS HORAINICIO,
         TIME_FORMAT(HORAFIM, '%H:%i') AS HORAFIM,
         STATUS,
@@ -16889,9 +16899,14 @@ app.post('/api/calendarios', async (req, res) => {
     const unidadeTrabalho = String(req.body?.unidadeTrabalho ?? '').trim();
     const periodo = String(req.body?.periodo ?? '').trim();
     const tipoPeriodo = String(req.body?.tipoPeriodo ?? '').trim().toLowerCase();
+    const tipoRecorrencia = String(req.body?.tipoRecorrencia ?? 'UNICO').trim().toUpperCase();
     const dataInicial = String(req.body?.dataInicial ?? '').trim();
     const dataFinalRaw = String(req.body?.dataFinal ?? '').trim();
     const repeteTodoAno = String(req.body?.repeteTodoAno ?? 'N').trim().toUpperCase();
+    const dataInicialTroca = String(req.body?.dataInicialTroca ?? '').trim();
+    const dataFinalTroca = String(req.body?.dataFinalTroca ?? '').trim();
+    const novaDataInicial = String(req.body?.novaDataInicial ?? '').trim();
+    const novaDataFinal = String(req.body?.novaDataFinal ?? '').trim();
     const horaInicio = String(req.body?.horaInicio ?? '').trim();
     const horaFim = String(req.body?.horaFim ?? '').trim();
     const status = String(req.body?.status ?? 'Ativo').trim() || 'Ativo';
@@ -16914,31 +16929,17 @@ app.post('/api/calendarios', async (req, res) => {
       });
     }
 
+    if (!['UNICO', 'ANUAL', 'TROCA_FERIADO'].includes(tipoRecorrencia)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um tipo de recorrência válido.'
+      });
+    }
+
     if (!periodo) {
       return res.status(400).json({
         success: false,
         message: 'Informe o período.'
-      });
-    }
-
-    if (!dataInicial) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe a data inicial.'
-      });
-    }
-
-    if (tipoPeriodo === 'intervalo' && !dataFinal) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe a data final.'
-      });
-    }
-
-    if (tipoPeriodo === 'intervalo' && dataFinal < dataInicial) {
-      return res.status(400).json({
-        success: false,
-        message: 'A data final não pode ser menor que a data inicial.'
       });
     }
 
@@ -16956,28 +16957,89 @@ app.post('/api/calendarios', async (req, res) => {
       });
     }
 
+    if (tipoRecorrencia === 'TROCA_FERIADO') {
+      if (!dataInicialTroca || !dataFinalTroca) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe o período original do feriado.'
+        });
+      }
+
+      if (!novaDataInicial || !novaDataFinal) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe o novo período da troca.'
+        });
+      }
+
+      if (dataFinalTroca < dataInicialTroca) {
+        return res.status(400).json({
+          success: false,
+          message: 'A data final do feriado não pode ser menor que a inicial.'
+        });
+      }
+
+      if (novaDataFinal < novaDataInicial) {
+        return res.status(400).json({
+          success: false,
+          message: 'A nova data final não pode ser menor que a nova data inicial.'
+        });
+      }
+    } else {
+      if (!dataInicial) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe a data inicial.'
+        });
+      }
+
+      if (tipoPeriodo === 'intervalo' && !dataFinal) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe a data final.'
+        });
+      }
+
+      if (tipoPeriodo === 'intervalo' && dataFinal < dataInicial) {
+        return res.status(400).json({
+          success: false,
+          message: 'A data final não pode ser menor que a data inicial.'
+        });
+      }
+    }
+
     const [result] = await pool.query(`
       INSERT INTO SF_CALENDARIO (
         UNIDADETRABALHO,
         PERIODO,
         TIPOPERIODO,
+        TIPORECORRENCIA,
         DATAINICIAL,
         DATAFINAL,
         REPETETODOANO,
+        DATAINICIALTROCA,
+        DATAFINALTROCA,
+        NOVADATAINICIAL,
+        NOVADATAFINAL,
         HORAINICIO,
         HORAFIM,
         STATUS,
         USUARIOCADASTRO,
         OBSERVACAO,
         DATACADASTRO
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `, [
       unidadeTrabalho,
       periodo,
       tipoPeriodo,
-      dataInicial,
+      tipoRecorrencia,
+      dataInicial || null,
       dataFinal,
-      repeteTodoAno === 'S' ? 'S' : 'N',
+      tipoRecorrencia === 'ANUAL' ? 'S' : 'N',
+      dataInicialTroca || null,
+      dataFinalTroca || null,
+      novaDataInicial || null,
+      novaDataFinal || null,
       horaInicio,
       horaFim,
       status,
@@ -17006,9 +17068,14 @@ app.put('/api/calendarios/:id', async (req, res) => {
     const unidadeTrabalho = String(req.body?.unidadeTrabalho ?? '').trim();
     const periodo = String(req.body?.periodo ?? '').trim();
     const tipoPeriodo = String(req.body?.tipoPeriodo ?? '').trim().toLowerCase();
+    const tipoRecorrencia = String(req.body?.tipoRecorrencia ?? 'UNICO').trim().toUpperCase();
     const dataInicial = String(req.body?.dataInicial ?? '').trim();
     const dataFinalRaw = String(req.body?.dataFinal ?? '').trim();
     const repeteTodoAno = String(req.body?.repeteTodoAno ?? 'N').trim().toUpperCase();
+    const dataInicialTroca = String(req.body?.dataInicialTroca ?? '').trim();
+    const dataFinalTroca = String(req.body?.dataFinalTroca ?? '').trim();
+    const novaDataInicial = String(req.body?.novaDataInicial ?? '').trim();
+    const novaDataFinal = String(req.body?.novaDataFinal ?? '').trim();
     const horaInicio = String(req.body?.horaInicio ?? '').trim();
     const horaFim = String(req.body?.horaFim ?? '').trim();
     const status = String(req.body?.status ?? '').trim() || 'Ativo';
@@ -17038,31 +17105,17 @@ app.put('/api/calendarios/:id', async (req, res) => {
       });
     }
 
+    if (!['UNICO', 'ANUAL', 'TROCA_FERIADO'].includes(tipoRecorrencia)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe um tipo de recorrência válido.'
+      });
+    }
+
     if (!periodo) {
       return res.status(400).json({
         success: false,
         message: 'Informe o período.'
-      });
-    }
-
-    if (!dataInicial) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe a data inicial.'
-      });
-    }
-
-    if (tipoPeriodo === 'intervalo' && !dataFinal) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe a data final.'
-      });
-    }
-
-    if (tipoPeriodo === 'intervalo' && dataFinal < dataInicial) {
-      return res.status(400).json({
-        success: false,
-        message: 'A data final não pode ser menor que a data inicial.'
       });
     }
 
@@ -17080,15 +17133,71 @@ app.put('/api/calendarios/:id', async (req, res) => {
       });
     }
 
+    if (tipoRecorrencia === 'TROCA_FERIADO') {
+      if (!dataInicialTroca || !dataFinalTroca) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe o período original do feriado.'
+        });
+      }
+
+      if (!novaDataInicial || !novaDataFinal) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe o novo período da troca.'
+        });
+      }
+
+      if (dataFinalTroca < dataInicialTroca) {
+        return res.status(400).json({
+          success: false,
+          message: 'A data final do feriado não pode ser menor que a inicial.'
+        });
+      }
+
+      if (novaDataFinal < novaDataInicial) {
+        return res.status(400).json({
+          success: false,
+          message: 'A nova data final não pode ser menor que a nova data inicial.'
+        });
+      }
+    } else {
+      if (!dataInicial) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe a data inicial.'
+        });
+      }
+
+      if (tipoPeriodo === 'intervalo' && !dataFinal) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe a data final.'
+        });
+      }
+
+      if (tipoPeriodo === 'intervalo' && dataFinal < dataInicial) {
+        return res.status(400).json({
+          success: false,
+          message: 'A data final não pode ser menor que a data inicial.'
+        });
+      }
+    }
+
     const [result] = await pool.query(`
       UPDATE SF_CALENDARIO
       SET
         UNIDADETRABALHO = ?,
         PERIODO = ?,
         TIPOPERIODO = ?,
+        TIPORECORRENCIA = ?,
         DATAINICIAL = ?,
         DATAFINAL = ?,
         REPETETODOANO = ?,
+        DATAINICIALTROCA = ?,
+        DATAFINALTROCA = ?,
+        NOVADATAINICIAL = ?,
+        NOVADATAFINAL = ?,
         HORAINICIO = ?,
         HORAFIM = ?,
         STATUS = ?,
@@ -17100,9 +17209,14 @@ app.put('/api/calendarios/:id', async (req, res) => {
       unidadeTrabalho,
       periodo,
       tipoPeriodo,
-      dataInicial,
+      tipoRecorrencia,
+      dataInicial || null,
       dataFinal,
-      repeteTodoAno === 'S' ? 'S' : 'N',
+      tipoRecorrencia === 'ANUAL' ? 'S' : 'N',
+      dataInicialTroca || null,
+      dataFinalTroca || null,
+      novaDataInicial || null,
+      novaDataFinal || null,
       horaInicio,
       horaFim,
       status,
