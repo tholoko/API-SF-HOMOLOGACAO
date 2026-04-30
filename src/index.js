@@ -831,7 +831,6 @@ async function executarRotinaAniversariantes() {
     const aniversariantes = await listarAniversariantesHoje(conn);
 
     if (!aniversariantes.length) {
-      console.log('[ANIVERSARIANTES] Nenhum aniversariante hoje.');
       return;
     }
 
@@ -840,7 +839,6 @@ async function executarRotinaAniversariantes() {
         const jaEnviado = await jaEnviadoAniversarioHoje(conn, usuario.ID);
 
         if (jaEnviado) {
-          console.log(`[ANIVERSARIANTES] Já enviado hoje para ${usuario.NOME}.`);
           continue;
         }
 
@@ -855,7 +853,6 @@ async function executarRotinaAniversariantes() {
           resultado.sucesso ? null : (resultado?.envios?.map(e => `${e.telefone}: ${e.erro || 'falha'}`).join(' | ') || 'Falha no envio')
         );
 
-        console.log('[ANIVERSARIANTES] Resultado:', resultado);
       } catch (errUsuario) {
         console.error(`[ANIVERSARIANTES] Erro ao processar ${usuario.NOME}:`, errUsuario.message);
 
@@ -878,7 +875,6 @@ async function executarRotinaAniversariantes() {
 }
 
 cron.schedule('0 8,14 * * *', async () => {
-  console.log('[CRON] Iniciando verificação de aniversariantes...');
   await executarRotinaAniversariantes();
 }, {
   timezone: 'America/Bahia'
@@ -14021,8 +14017,6 @@ async function validarStatusInstanciaZApi() {
   const { clientToken } = getZApiConfig();
   const statusUrl = getZApiStatusUrl();
 
-  console.log('[ZAPI] Validando status da instância...');
-  console.log('[ZAPI] Status URL:', statusUrl);
 
   const resp = await fetch(statusUrl, {
     method: 'GET',
@@ -14033,8 +14027,6 @@ async function validarStatusInstanciaZApi() {
 
   const data = await resp.json().catch(() => null);
 
-  console.log('[ZAPI] Status response code:', resp.status);
-  console.log('[ZAPI] Status response body:', data);
 
   if (!resp.ok) {
     throw new Error(data?.message || data?.error || `Erro ao consultar status da instância Z-API. HTTP ${resp.status}`);
@@ -14294,12 +14286,6 @@ async function enviarImagemWhatsAppZApi({ telefone, imageBase64, caption = '' })
     viewOnce: false
   };
 
-  console.log('[ZAPI][IMAGE] Enviando imagem...');
-  console.log('[ZAPI][IMAGE] Endpoint:', endpoint);
-  console.log('[ZAPI][IMAGE] Instance ID:', process.env.ZAPI_INSTANCE_ID);
-  console.log('[ZAPI][IMAGE] Telefone original:', telefone);
-  console.log('[ZAPI][IMAGE] Telefone normalizado:', numero);
-  console.log('[ZAPI][IMAGE] Caption:', caption);
 
   const resp = await fetch(endpoint, {
     method: 'POST',
@@ -14312,8 +14298,6 @@ async function enviarImagemWhatsAppZApi({ telefone, imageBase64, caption = '' })
 
   const data = await resp.json().catch(() => null);
 
-  console.log('[ZAPI][IMAGE] Response code:', resp.status);
-  console.log('[ZAPI][IMAGE] Response body:', data);
 
   if (!resp.ok) {
     throw new Error(data?.message || data?.error || `Erro ao enviar imagem via Z-API. HTTP ${resp.status}`);
@@ -14333,7 +14317,6 @@ async function notificarUsuariosCentroCustoTransferenciaImagem(conn, {
   const resultados = [];
 
   if (!usuarios.length) {
-    console.log('[WHATSAPP][IMAGE] Nenhum usuário encontrado para o centro de custo:', centroCusto);
     return resultados;
   }
 
@@ -15186,38 +15169,27 @@ app.post('/api/ping-monitor/:id/contatos', async (req, res) => {
 app.post('/api/ping-monitor/verificar', async (req, res) => {
   let conn;
 
-  console.log('[PING] Iniciando verificação manual', {
-    body: req.body,
-    dataHora: new Date().toISOString()
-  });
 
   try {
     const idMonitor = Number(req.body.idMonitor);
-    console.log('[PING] idMonitor recebido:', idMonitor);
 
     if (!idMonitor) {
-      console.log('[PING] idMonitor inválido');
       return res.status(400).json({
         success: false,
         message: 'Informe idMonitor.'
       });
     }
 
-    console.log('[PING] Obtendo conexão com banco...');
     conn = await pool.getConnection();
-    console.log('[PING] Conexão obtida com sucesso');
 
-    console.log('[PING] Buscando monitor no banco...', { idMonitor });
     const [rows] = await conn.query(
       `SELECT * FROM SF_PING_MONITOR WHERE ID = ? LIMIT 1`,
       [idMonitor]
     );
 
     const monitor = rows[0];
-    console.log('[PING] Resultado da busca do monitor:', monitor);
 
     if (!monitor) {
-      console.log('[PING] Monitor não encontrado', { idMonitor });
       return res.status(404).json({
         success: false,
         message: 'Monitor não encontrado.'
@@ -15225,16 +15197,8 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
     }
 
     const statusAnterior = monitor.STATUS_ATUAL || 'UNKNOWN';
-    console.log('[PING] Status anterior:', statusAnterior);
-
-    console.log('[PING] Executando ping no host...', {
-      ip: monitor.IP,
-      equipamento: monitor.EQUIPAMENTO,
-      localizacao: monitor.LOCALIZACAO
-    });
 
     const resultadoPing = await verificarPingHost(monitor.IP);
-    console.log('[PING] Resultado do ping:', resultadoPing);
 
     const statusNovo = resultadoPing.alive ? 'UP' : 'DOWN';
     const agora = new Date();
@@ -15247,15 +15211,8 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
       ? Number(monitor.QTD_SUCESSOS_CONSECUTIVOS || 0) + 1
       : 0;
 
-    console.log('[PING] Status calculado após verificação:', {
-      statusAnterior,
-      statusNovo,
-      qtdFalhas,
-      qtdSucessos,
-      agora
-    });
 
-    console.log('[PING] Atualizando tabela SF_PING_MONITOR...');
+
     await conn.query(
       `
       UPDATE SF_PING_MONITOR
@@ -15278,9 +15235,7 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
         idMonitor
       ]
     );
-    console.log('[PING] Monitor atualizado com sucesso');
 
-    console.log('[PING] Inserindo log em SF_PING_MONITOR_LOG...');
     const [logResult] = await conn.query(
       `
       INSERT INTO SF_PING_MONITOR_LOG
@@ -15298,9 +15253,6 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
       ]
     );
 
-    console.log('[PING] Log inserido com sucesso', {
-      logId: logResult.insertId
-    });
 
     let notificacao = null;
 
@@ -15312,18 +15264,10 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
         (statusNovo === 'UP' && houveMudanca)
       );
 
-    console.log('[PING] Avaliação de notificação:', {
-      enviarWhatsApp: monitor.ENVIAR_WHATSAPP,
-      houveMudanca,
-      deveNotificar,
-      statusAnterior,
-      statusNovo
-    });
+
 
     if (deveNotificar) {
-      console.log('[PING] Buscando contatos para envio...', { idMonitor });
       const contatos = await obterContatosParaEnvio(conn, idMonitor);
-      console.log('[PING] Contatos encontrados:', contatos);
 
       if (contatos.length) {
         const mensagem = montarMensagemAlertaPing({
@@ -15335,35 +15279,22 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
           erro: resultadoPing.alive ? null : resultadoPing.output
         });
 
-        console.log('[PING] Mensagem montada para envio:');
-        console.log(mensagem);
 
-        console.log('[PING] Enviando WhatsApp para lista...');
         notificacao = await enviarWhatsAppParaLista({
           lista: contatos,
           mensagem
         });
 
-        console.log('[PING] Resultado do envio WhatsApp:', notificacao);
 
-        console.log('[PING] Atualizando log como notificado...');
         await conn.query(
           `UPDATE SF_PING_MONITOR_LOG SET NOTIFICADO = '1', DATA_ENVIO_NOTIFICACAO = ? WHERE ID = ?`,
           [new Date(), logResult.insertId]
         );
-        console.log('[PING] Log atualizado como notificado');
       } else {
-        console.log('[PING] Nenhum contato válido encontrado para notificação');
       }
     } else {
-      console.log('[PING] Notificação não será enviada');
     }
 
-    console.log('[PING] Finalizando verificação com sucesso', {
-      idMonitor,
-      statusAnterior,
-      statusNovo
-    });
 
     return res.json({
       success: true,
@@ -15386,7 +15317,6 @@ app.post('/api/ping-monitor/verificar', async (req, res) => {
     });
   } finally {
     if (conn) {
-      console.log('[PING] Liberando conexão com banco');
       conn.release();
     }
   }
@@ -15530,7 +15460,6 @@ async function rotinaPingMonitoramento() {
               [new Date(), logResult.insertId]
             );
 
-            console.log('Notificação enviada', monitor.ID, retornoEnvio);
           }
         }
       } catch (err) {
@@ -15750,7 +15679,6 @@ function montarMensagemCStat(cStat, xMotivo, ultNSU, maxNSU) {
 
 app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async (req, res) => {
   try {
-    console.log('[DFE] Iniciando consulta /api/dfe/consultar');
 
     const senha = String(req.body?.senha || '').trim();
     const documento = limparDocumento(req.body?.documento || '');
@@ -15763,22 +15691,9 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     const consultaSemDocumento = !documento;
     const limiteFinal = consultaSemDocumento ? 15 : limiteInformado;
 
-    console.log('[DFE] Parâmetros recebidos:', {
-      documento,
-      tipoDocumento: cnpj ? 'CNPJ' : cpf ? 'CPF' : 'VAZIO',
-      tpAmb,
-      cUFAutor,
-      ultNSU,
-      limiteInformado,
-      limiteFinal,
-      consultaSemDocumento,
-      arquivoRecebido: !!req.file,
-      nomeArquivo: req.file?.originalname || null,
-      tamanhoArquivo: req.file?.size || 0
-    });
+
 
     if (!req.file?.buffer) {
-      console.log('[DFE] Validação falhou: certificado não enviado');
       return res.status(400).json({
         success: false,
         message: 'Selecione o certificado A1 (.pfx ou .p12) antes de consultar.'
@@ -15786,7 +15701,6 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     }
 
     if (!senha) {
-      console.log('[DFE] Validação falhou: senha não informada');
       return res.status(400).json({
         success: false,
         message: 'Informe a senha do certificado digital.'
@@ -15794,7 +15708,6 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     }
 
     if (documento && documento.length !== 11 && documento.length !== 14) {
-      console.log('[DFE] Validação falhou: documento inválido', { documento });
       return res.status(400).json({
         success: false,
         message: 'O documento informado é inválido. Informe um CPF com 11 dígitos, um CNPJ com 14 dígitos ou deixe o campo em branco.'
@@ -15811,41 +15724,20 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     if (cnpj) configDistribuicao.cnpj = cnpj;
     if (cpf) configDistribuicao.cpf = cpf;
 
-    console.log('[DFE] Configuração montada para DistribuicaoDFe:', {
-      possuiCnpj: !!configDistribuicao.cnpj,
-      possuiCpf: !!configDistribuicao.cpf,
-      cnpj: configDistribuicao.cnpj || null,
-      cpf: configDistribuicao.cpf || null,
-      tpAmb: configDistribuicao.tpAmb,
-      cUFAutor: configDistribuicao.cUFAutor
-    });
-
     if (!configDistribuicao.cnpj && !configDistribuicao.cpf) {
-      console.log('[DFE] Nenhum CPF/CNPJ informado para a consulta');
       return res.status(400).json({
         success: false,
         message: 'Informe um CPF ou CNPJ para a consulta. Se quiser aceitar vazio, implemente a extração automática do documento a partir do certificado.'
       });
     }
 
-    console.log('[DFE] Instanciando DistribuicaoDFe...');
     const distribuicao = new DistribuicaoDFe(configDistribuicao);
 
-    console.log('[DFE] Executando consultaUltNSU...', { ultNSU });
     const consulta = await distribuicao.consultaUltNSU(ultNSU);
 
-    console.log('[DFE] Retorno bruto da consulta recebido:', {
-      possuiError: !!consulta?.error,
-      possuiData: !!consulta?.data,
-      cStat: consulta?.data?.cStat || null,
-      xMotivo: consulta?.data?.xMotivo || null,
-      ultNSU: consulta?.data?.ultNSU || null,
-      maxNSU: consulta?.data?.maxNSU || null,
-      quantidadeDocZip: Array.isArray(consulta?.data?.docZip) ? consulta.data.docZip.length : 0
-    });
+
 
     if (consulta?.error) {
-      console.log('[DFE] Consulta retornou erro da biblioteca:', consulta.error);
       return res.status(400).json({
         success: false,
         message: `Falha no retorno da distribuição DF-e: ${consulta.error}`
@@ -15861,7 +15753,6 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     const tipoDocumentoUsado = cnpj ? 'CNPJ' : cpf ? 'CPF' : '';
 
     if (cStat === '656') {
-      console.log('[DFE] Consumo indevido detectado');
       return res.status(400).json({
         success: false,
         message: montarMensagemCStat(cStat, xMotivo, ultNSURetorno, maxNSURetorno),
@@ -15881,7 +15772,6 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
     }
 
     if (['472', '593'].includes(cStat)) {
-      console.log('[DFE] Documento informado diverge do certificado', { cStat, xMotivo });
       return res.status(mapearStatusHttpPorCStat(cStat)).json({
         success: false,
         message: montarMensagemCStat(cStat, xMotivo, ultNSURetorno, maxNSURetorno),
@@ -15902,29 +15792,9 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
 
     let docs = normalizarDocsConsulta(data?.docZip || []);
 
-    console.log('[DFE] Documentos normalizados:', {
-      quantidadeAntesDoSlice: docs.length,
-      cStat
-    });
+
 
     docs = docs.slice(0, limiteFinal);
-
-    console.log('[DFE] Documentos após aplicar limite:', {
-      quantidadeFinal: docs.length,
-      limiteFinal
-    });
-
-    if (docs.length) {
-      console.log('[DFE] Primeiro documento retornado:', {
-        nsu: docs[0]?.nsu || null,
-        chave: docs[0]?.chave || null,
-        emitente: docs[0]?.emitente || null,
-        tipo: docs[0]?.tipo || null,
-        dataEmissao: docs[0]?.dataEmissao || null
-      });
-    } else {
-      console.log('[DFE] Nenhum documento retornado após normalização/filtro');
-    }
 
     const sessionId = gerarSessionIdDfe();
 
@@ -15943,13 +15813,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       items: docs
     });
 
-    console.log('[DFE] Sessão criada com sucesso:', {
-      sessionId,
-      quantidadeItens: docs.length,
-      ultNSU: ultNSURetorno,
-      maxNSU: maxNSURetorno,
-      cStat
-    });
+
 
     let msgConsulta = 'Consulta concluída com sucesso.';
 
@@ -15963,11 +15827,7 @@ app.post('/api/dfe/consultar', uploadCertificadoDfe.single('certificado'), async
       msgConsulta = xMotivo;
     }
 
-    console.log('[DFE] Finalizando rota com sucesso:', {
-      sessionId,
-      mensagem: msgConsulta,
-      cStat
-    });
+
 
     return res.json({
       success: true,
@@ -16384,7 +16244,6 @@ app.get('/api/equipamentos/:id', async (req, res) => {
 
 app.post('/api/equipamentos', async (req, res) => {
 
-  console.log(req.body);
   try {
     const payload = validarPayloadEquipamento(req.body);
 
@@ -16556,37 +16415,18 @@ app.delete('/api/equipamentos/:id', async (req, res) => {
 
 app.post('/api/equipamentos/testar-comunicacao', async (req, res) => {
   try {
-    console.log('--------------------------------------------------');
-    console.log('[POST] /api/equipamentos/testar-comunicacao');
-    console.log('[BODY RECEBIDO]', {
-      ...req.body,
-      senha: req.body?.senha ? '***' : ''
-    });
+
 
     const payload = validarPayloadEquipamento(req.body);
-    console.log('[PAYLOAD VALIDADO]', {
-      ...payload,
-      senha: payload?.senha ? '***' : ''
-    });
+
 
     const { session, baseUrl } = await fazerLoginControlId(payload);
-    console.log('[LOGIN OK]', {
-      baseUrl,
-      session,
-      ip: payload.ip,
-      protocolo: payload.protocolo,
-      porta: payload.porta,
-      usuario: payload.usuario,
-      tipoAfd: payload.tipoAfd
-    });
 
     let about = null;
 
     try {
       about = await obterAboutControlId(payload, session);
-      console.log('[ABOUT OK]', about);
     } catch (errAbout) {
-      console.log('[ABOUT ERRO]', errAbout.message);
       about = null;
     }
 
@@ -16605,10 +16445,7 @@ app.post('/api/equipamentos/testar-comunicacao', async (req, res) => {
       about
     };
 
-    console.log('[RESPOSTA SUCESSO]', {
-      ...resposta,
-      session: resposta.session ? '***SESSION***' : null
-    });
+
 
     return res.json(resposta);
   } catch (err) {
@@ -17486,7 +17323,6 @@ app.get('/api/jornadas/:id', async (req, res) => {
 
 // POST /api/jornadas
 app.post('/api/jornadas', async (req, res) => {
-  console.log(req.body);
 
   try {
     const descricao = texto(req.body?.descricao);
