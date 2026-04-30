@@ -1946,6 +1946,7 @@ app.get('/api/setores', async (req, res) => {
 // =====================
 // Gestão Usuários
 // =====================
+
 app.get('/api/gestao-usuarios-perfis', async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -2012,7 +2013,6 @@ const uploadFotoUsuario = multer({
   },
 });
 
-// Upload único da foto do usuário
 app.post('/api/gestao-usuarios/foto', uploadFotoUsuario.single('foto'), async (req, res) => {
   try {
     if (!req.file) {
@@ -2033,7 +2033,6 @@ app.post('/api/gestao-usuarios/foto', uploadFotoUsuario.single('foto'), async (r
   }
 });
 
-// Remover arquivo da foto do usuário
 app.delete('/api/gestao-usuarios/foto/:nome', async (req, res) => {
   try {
     const nome = apenasNomeArquivoSeguroCNH(req.params.nome);
@@ -2240,10 +2239,6 @@ app.delete('/api/gestao-usuarios-locais-trabalho/:id', async (req, res) => {
   }
 });
 
-
-// ======================================================
-// GESTÃO DE USUÁRIOS - APOIO CNH
-// ======================================================
 const PASTA_CNH_USUARIO = path.join(DIRETORIO_VOLUME_anexos, 'cnh-usuario');
 fs.mkdirSync(PASTA_CNH_USUARIO, { recursive: true });
 
@@ -2551,7 +2546,6 @@ const upload = multer({
   },
 });
 
-// LISTAR
 app.get("/api/marketing/imagens", async (req, res) => {
   try {
     const files = await fs.promises.readdir(PASTA_MARKETING, { withFileTypes: true });
@@ -2597,7 +2591,6 @@ app.patch('/api/marketing/cards/:id/exibido', async (req, res) => {
   }
 });
 
-// UPLOAD (múltiplos) - campo FormData: "files" [web:647]
 app.post("/api/marketing/imagens", upload.array("files", 20), async (req, res) => {
   try {
     const arquivos = Array.isArray(req.files) ? req.files : [];
@@ -2626,7 +2619,6 @@ app.post("/api/marketing/imagens", upload.array("files", 20), async (req, res) =
   }
 });
 
-// REMOVER
 app.delete("/api/marketing/imagens/:nome", async (req, res) => {
   try {
     const nome = apenasNomeArquivoSeguro(req.params.nome);
@@ -17283,6 +17275,711 @@ app.delete('/api/calendarios/:id', async (req, res) => {
   }
 });
 
+// ======================================================
+// Jornada de Trabalho
+// ======================================================
+
+// =========================
+// JORNADAS DE TRABALHO
+// =========================
+
+// Helpers locais caso não existam no seu projeto
+function texto(v) {
+  if (v === undefined || v === null) return '';
+  return String(v).trim();
+}
+
+function numero(v, padrao = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : padrao;
+}
+
+function dataOuNull(v) {
+  const s = texto(v);
+  return s || null;
+}
+
+function horaOuNull(v) {
+  const s = texto(v);
+  return s || null;
+}
+
+// GET /api/jornadas
+app.get('/api/jornadas', async (req, res) => {
+  try {
+    const busca = texto(req.query?.q);
+
+    let sql = `
+      SELECT
+        ID,
+        DESCRICAO,
+        HORA_ENTRADA,
+        HORA_SAIDA,
+        INTERVALO_MINUTOS,
+        CARGA_HORARIA,
+        TOLERANCIA_ATRASO_MIN,
+        TOLERANCIA_EXTRA_MIN,
+        STATUS,
+        OBSERVACAO,
+        CRIADO_EM,
+        ATUALIZADO_EM
+      FROM SF_JORNADA_TRABALHO
+    `;
+
+    const params = [];
+
+    if (busca) {
+      const like = `%${busca}%`;
+      sql += `
+        WHERE
+          DESCRICAO LIKE ?
+          OR HORA_ENTRADA LIKE ?
+          OR HORA_SAIDA LIKE ?
+          OR STATUS LIKE ?
+          OR CARGA_HORARIA LIKE ?
+      `;
+      params.push(like, like, like, like, like);
+    }
+
+    sql += ` ORDER BY DESCRICAO ASC, ID DESC`;
+
+    const [rows] = await pool.query(sql, params);
+
+    res.json({
+      success: true,
+      items: rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar jornadas.',
+      error: err.message
+    });
+  }
+});
+
+// GET /api/jornadas/:id
+app.get('/api/jornadas/:id', async (req, res) => {
+  try {
+    const id = numero(req.params.id);
+
+    const sql = `
+      SELECT
+        ID,
+        DESCRICAO,
+        HORA_ENTRADA,
+        HORA_SAIDA,
+        INTERVALO_MINUTOS,
+        CARGA_HORARIA,
+        TOLERANCIA_ATRASO_MIN,
+        TOLERANCIA_EXTRA_MIN,
+        STATUS,
+        OBSERVACAO,
+        CRIADO_EM,
+        ATUALIZADO_EM
+      FROM SF_JORNADA_TRABALHO
+      WHERE ID = ?
+      LIMIT 1
+    `;
+
+    const [rows] = await pool.query(sql, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Jornada não encontrada.'
+      });
+    }
+
+    res.json({
+      success: true,
+      item: rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar jornada.',
+      error: err.message
+    });
+  }
+});
+
+// POST /api/jornadas
+app.post('/api/jornadas', async (req, res) => {
+  try {
+    const descricao = texto(req.body?.descricao);
+    const horaEntrada = horaOuNull(req.body?.horaEntrada);
+    const horaSaida = horaOuNull(req.body?.horaSaida);
+    const intervaloMinutos = numero(req.body?.intervaloMinutos, 0);
+    const cargaHoraria = texto(req.body?.cargaHoraria);
+    const toleranciaAtrasoMin = numero(req.body?.toleranciaAtrasoMin, 0);
+    const toleranciaExtraMin = numero(req.body?.toleranciaExtraMin, 0);
+    const status = texto(req.body?.status || 'ATIVO');
+    const observacao = texto(req.body?.observacao);
+
+    if (!descricao) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a descrição da jornada.'
+      });
+    }
+
+    if (!horaEntrada || !horaSaida) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a hora de entrada e a hora de saída.'
+      });
+    }
+
+    const sql = `
+      INSERT INTO SF_JORNADA_TRABALHO (
+        DESCRICAO,
+        HORA_ENTRADA,
+        HORA_SAIDA,
+        INTERVALO_MINUTOS,
+        CARGA_HORARIA,
+        TOLERANCIA_ATRASO_MIN,
+        TOLERANCIA_EXTRA_MIN,
+        STATUS,
+        OBSERVACAO
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    const params = [
+      descricao,
+      horaEntrada,
+      horaSaida,
+      intervaloMinutos,
+      cargaHoraria || null,
+      toleranciaAtrasoMin,
+      toleranciaExtraMin,
+      status || 'ATIVO',
+      observacao || null
+    ];
+
+    const [result] = await pool.query(sql, params);
+
+    res.json({
+      success: true,
+      message: 'Jornada cadastrada com sucesso.',
+      id: result.insertId
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao cadastrar jornada.',
+      error: err.message
+    });
+  }
+});
+
+// PUT /api/jornadas/:id
+app.put('/api/jornadas/:id', async (req, res) => {
+  try {
+    const id = numero(req.params.id);
+
+    const descricao = texto(req.body?.descricao);
+    const horaEntrada = horaOuNull(req.body?.horaEntrada);
+    const horaSaida = horaOuNull(req.body?.horaSaida);
+    const intervaloMinutos = numero(req.body?.intervaloMinutos, 0);
+    const cargaHoraria = texto(req.body?.cargaHoraria);
+    const toleranciaAtrasoMin = numero(req.body?.toleranciaAtrasoMin, 0);
+    const toleranciaExtraMin = numero(req.body?.toleranciaExtraMin, 0);
+    const status = texto(req.body?.status || 'ATIVO');
+    const observacao = texto(req.body?.observacao);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da jornada inválido.'
+      });
+    }
+
+    if (!descricao) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a descrição da jornada.'
+      });
+    }
+
+    if (!horaEntrada || !horaSaida) {
+      return res.status(400).json({
+        success: false,
+        message: 'Informe a hora de entrada e a hora de saída.'
+      });
+    }
+
+    const [exists] = await pool.query(
+      `SELECT ID FROM SF_JORNADA_TRABALHO WHERE ID = ? LIMIT 1`,
+      [id]
+    );
+
+    if (!exists.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Jornada não encontrada.'
+      });
+    }
+
+    const sql = `
+      UPDATE SF_JORNADA_TRABALHO
+      SET
+        DESCRICAO = ?,
+        HORA_ENTRADA = ?,
+        HORA_SAIDA = ?,
+        INTERVALO_MINUTOS = ?,
+        CARGA_HORARIA = ?,
+        TOLERANCIA_ATRASO_MIN = ?,
+        TOLERANCIA_EXTRA_MIN = ?,
+        STATUS = ?,
+        OBSERVACAO = ?
+      WHERE ID = ?
+    `;
+
+    const params = [
+      descricao,
+      horaEntrada,
+      horaSaida,
+      intervaloMinutos,
+      cargaHoraria || null,
+      toleranciaAtrasoMin,
+      toleranciaExtraMin,
+      status || 'ATIVO',
+      observacao || null,
+      id
+    ];
+
+    await pool.query(sql, params);
+
+    res.json({
+      success: true,
+      message: 'Jornada atualizada com sucesso.'
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar jornada.',
+      error: err.message
+    });
+  }
+});
+
+// DELETE /api/jornadas/:id
+app.delete('/api/jornadas/:id', async (req, res) => {
+  try {
+    const id = numero(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da jornada inválido.'
+      });
+    }
+
+    const [vinculos] = await pool.query(
+      `SELECT ID FROM SF_USUARIO_JORNADA WHERE JORNADA_ID = ? AND STATUS = 'ATIVO' LIMIT 1`,
+      [id]
+    );
+
+    if (vinculos.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Não é possível excluir a jornada porque existem usuários vinculados.'
+      });
+    }
+
+    const [result] = await pool.query(
+      `DELETE FROM SF_JORNADA_TRABALHO WHERE ID = ?`,
+      [id]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Jornada não encontrada.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Jornada removida com sucesso.'
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir jornada.',
+      error: err.message
+    });
+  }
+});
+
+// GET /api/jornadas/:id/vinculos
+app.get('/api/jornadas/:id/vinculos', async (req, res) => {
+  try {
+    const jornadaId = numero(req.params.id);
+
+    const sql = `
+      SELECT
+        J.ID,
+        J.USUARIO_ID,
+        J.JORNADA_ID,
+        J.DATA_INICIO,
+        J.DATA_FIM,
+        J.STATUS,
+        J.CRIADO_EM,
+        J.ATUALIZADO_EM,
+        U.nome AS USUARIO_NOME,
+        U.EMAIL AS USUARIO_EMAIL,
+        U.perfil AS USUARIO_PERFIL,
+        U.setor AS USUARIO_SETOR,
+        JT.DESCRICAO AS JORNADA_DESCRICAO,
+        JT.HORA_ENTRADA,
+        JT.HORA_SAIDA
+      FROM SF_USUARIO_JORNADA J
+      INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
+      INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
+      WHERE J.JORNADA_ID = ?
+      ORDER BY U.nome ASC, J.DATA_INICIO DESC
+    `;
+
+    const [rows] = await pool.query(sql, [jornadaId]);
+
+    res.json({
+      success: true,
+      items: rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar vínculos da jornada.',
+      error: err.message
+    });
+  }
+});
+
+// GET /api/jornadas/vinculos
+app.get('/api/jornadas-vinculos', async (req, res) => {
+  try {
+    const busca = texto(req.query?.q);
+
+    let sql = `
+      SELECT
+        J.ID,
+        J.USUARIO_ID,
+        J.JORNADA_ID,
+        J.DATA_INICIO,
+        J.DATA_FIM,
+        J.STATUS,
+        U.nome AS USUARIO_NOME,
+        U.EMAIL AS USUARIO_EMAIL,
+        U.perfil AS USUARIO_PERFIL,
+        U.setor AS USUARIO_SETOR,
+        JT.DESCRICAO AS JORNADA_DESCRICAO,
+        JT.HORA_ENTRADA,
+        JT.HORA_SAIDA
+      FROM SF_USUARIO_JORNADA J
+      INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
+      INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
+    `;
+
+    const params = [];
+
+    if (busca) {
+      const like = `%${busca}%`;
+      sql += `
+        WHERE
+          U.nome LIKE ?
+          OR U.EMAIL LIKE ?
+          OR U.perfil LIKE ?
+          OR U.setor LIKE ?
+          OR JT.DESCRICAO LIKE ?
+          OR J.STATUS LIKE ?
+      `;
+      params.push(like, like, like, like, like, like);
+    }
+
+    sql += ` ORDER BY U.nome ASC, J.DATA_INICIO DESC`;
+
+    const [rows] = await pool.query(sql, params);
+
+    res.json({
+      success: true,
+      items: rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar vínculos de jornadas.',
+      error: err.message
+    });
+  }
+});
+
+// GET /api/jornadas/vinculos/:id
+app.get('/api/jornadas/vinculos/:id', async (req, res) => {
+  try {
+    const id = numero(req.params.id);
+
+    const sql = `
+      SELECT
+        J.ID,
+        J.USUARIO_ID,
+        J.JORNADA_ID,
+        J.DATA_INICIO,
+        J.DATA_FIM,
+        J.STATUS,
+        U.nome AS USUARIO_NOME,
+        U.EMAIL AS USUARIO_EMAIL,
+        JT.DESCRICAO AS JORNADA_DESCRICAO
+      FROM SF_USUARIO_JORNADA J
+      INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
+      INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
+      WHERE J.ID = ?
+      LIMIT 1
+    `;
+
+    const [rows] = await pool.query(sql, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vínculo não encontrado.'
+      });
+    }
+
+    res.json({
+      success: true,
+      item: rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar vínculo.',
+      error: err.message
+    });
+  }
+});
+
+// POST /api/jornadas/vincular-usuario
+app.post('/api/jornadas/vincular-usuario', async (req, res) => {
+  try {
+    const usuarioId = Number(req.body?.usuarioId);
+    const jornadaId = Number(req.body?.jornadaId);
+    const dataInicio = dataOuNull(req.body?.dataInicio);
+    const dataFim = dataOuNull(req.body?.dataFim);
+    const status = texto(req.body?.status || 'ATIVO');
+
+    if (!usuarioId || !jornadaId || !dataInicio) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário, jornada e data de início são obrigatórios.'
+      });
+    }
+
+    const [usuarioRows] = await pool.query(
+      `SELECT id, nome FROM SF_USUARIO WHERE id = ? LIMIT 1`,
+      [usuarioId]
+    );
+
+    if (!usuarioRows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuário não encontrado.'
+      });
+    }
+
+    const [jornadaRows] = await pool.query(
+      `SELECT ID, DESCRICAO FROM SF_JORNADA_TRABALHO WHERE ID = ? LIMIT 1`,
+      [jornadaId]
+    );
+
+    if (!jornadaRows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Jornada não encontrada.'
+      });
+    }
+
+    const [duplicado] = await pool.query(
+      `
+        SELECT ID
+        FROM SF_USUARIO_JORNADA
+        WHERE USUARIO_ID = ?
+          AND JORNADA_ID = ?
+          AND DATA_INICIO = ?
+        LIMIT 1
+      `,
+      [usuarioId, jornadaId, dataInicio]
+    );
+
+    if (duplicado.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Já existe vínculo deste usuário com esta jornada nesta data.'
+      });
+    }
+
+    const sql = `
+      INSERT INTO SF_USUARIO_JORNADA (
+        USUARIO_ID,
+        JORNADA_ID,
+        DATA_INICIO,
+        DATA_FIM,
+        STATUS
+      ) VALUES (?, ?, ?, ?, ?)
+    `;
+
+    const params = [
+      usuarioId,
+      jornadaId,
+      dataInicio,
+      dataFim || null,
+      status || 'ATIVO'
+    ];
+
+    const [result] = await pool.query(sql, params);
+
+    res.json({
+      success: true,
+      message: 'Usuário vinculado à jornada com sucesso.',
+      id: result.insertId
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao vincular usuário à jornada.',
+      error: err.message
+    });
+  }
+});
+
+// PUT /api/jornadas/vinculos/:id
+app.put('/api/jornadas/vinculos/:id', async (req, res) => {
+  try {
+    const id = numero(req.params.id);
+    const usuarioId = Number(req.body?.usuarioId);
+    const jornadaId = Number(req.body?.jornadaId);
+    const dataInicio = dataOuNull(req.body?.dataInicio);
+    const dataFim = dataOuNull(req.body?.dataFim);
+    const status = texto(req.body?.status || 'ATIVO');
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID do vínculo inválido.'
+      });
+    }
+
+    if (!usuarioId || !jornadaId || !dataInicio) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário, jornada e data de início são obrigatórios.'
+      });
+    }
+
+    const [exists] = await pool.query(
+      `SELECT ID FROM SF_USUARIO_JORNADA WHERE ID = ? LIMIT 1`,
+      [id]
+    );
+
+    if (!exists.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vínculo não encontrado.'
+      });
+    }
+
+    const [duplicado] = await pool.query(
+      `
+        SELECT ID
+        FROM SF_USUARIO_JORNADA
+        WHERE USUARIO_ID = ?
+          AND JORNADA_ID = ?
+          AND DATA_INICIO = ?
+          AND ID <> ?
+        LIMIT 1
+      `,
+      [usuarioId, jornadaId, dataInicio, id]
+    );
+
+    if (duplicado.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Já existe outro vínculo igual para este usuário.'
+      });
+    }
+
+    const sql = `
+      UPDATE SF_USUARIO_JORNADA
+      SET
+        USUARIO_ID = ?,
+        JORNADA_ID = ?,
+        DATA_INICIO = ?,
+        DATA_FIM = ?,
+        STATUS = ?
+      WHERE ID = ?
+    `;
+
+    const params = [
+      usuarioId,
+      jornadaId,
+      dataInicio,
+      dataFim || null,
+      status || 'ATIVO',
+      id
+    ];
+
+    await pool.query(sql, params);
+
+    res.json({
+      success: true,
+      message: 'Vínculo atualizado com sucesso.'
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar vínculo.',
+      error: err.message
+    });
+  }
+});
+
+// DELETE /api/jornadas/vinculos/:id
+app.delete('/api/jornadas/vinculos/:id', async (req, res) => {
+  try {
+    const id = numero(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID do vínculo inválido.'
+      });
+    }
+
+    const [result] = await pool.query(
+      `DELETE FROM SF_USUARIO_JORNADA WHERE ID = ?`,
+      [id]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vínculo não encontrado.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Vínculo removido com sucesso.'
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir vínculo.',
+      error: err.message
+    });
+  }
+});
 
 // =====================
 // Inicia servidor (sempre por último)

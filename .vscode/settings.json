@@ -14,5 +14,6 @@
             "username": "root",
             "connectString": "mysql://root:ClAtlSGJbFbQRVCUNAFEUffcghUPoodk@switchyard.proxy.rlwy.net:27177/railway"
         }
-    ]
+    ],
+    "liveServer.settings.port": 5501
 }
