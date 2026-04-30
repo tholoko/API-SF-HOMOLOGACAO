@@ -17352,6 +17352,11 @@ function validarSequenciaJornada({
 // JORNADAS
 // =========================
 
+function flagSN(valor, padrao = 'N') {
+  const v = String(valor ?? padrao).trim().toUpperCase();
+  return v === 'S' ? 'S' : 'N';
+}
+
 // GET /api/jornadas
 app.get('/api/jornadas', async (req, res) => {
   try {
@@ -17368,6 +17373,13 @@ app.get('/api/jornadas', async (req, res) => {
         CARGA_HORARIA,
         TOLERANCIA_ATRASO_MIN,
         TOLERANCIA_EXTRA_MIN,
+        TRABALHA_DOMINGO,
+        TRABALHA_SEGUNDA,
+        TRABALHA_TERCA,
+        TRABALHA_QUARTA,
+        TRABALHA_QUINTA,
+        TRABALHA_SEXTA,
+        TRABALHA_SABADO,
         STATUS,
         OBSERVACAO,
         CRIADO_EM,
@@ -17433,6 +17445,13 @@ app.get('/api/jornadas/:id', async (req, res) => {
         CARGA_HORARIA,
         TOLERANCIA_ATRASO_MIN,
         TOLERANCIA_EXTRA_MIN,
+        TRABALHA_DOMINGO,
+        TRABALHA_SEGUNDA,
+        TRABALHA_TERCA,
+        TRABALHA_QUARTA,
+        TRABALHA_QUINTA,
+        TRABALHA_SEXTA,
+        TRABALHA_SABADO,
         STATUS,
         OBSERVACAO,
         CRIADO_EM,
@@ -17467,8 +17486,8 @@ app.get('/api/jornadas/:id', async (req, res) => {
 
 // POST /api/jornadas
 app.post('/api/jornadas', async (req, res) => {
-
   console.log(req.body);
+
   try {
     const descricao = texto(req.body?.descricao);
     const horaEntrada1 = horaOuNull(req.body?.horaEntrada1);
@@ -17480,6 +17499,14 @@ app.post('/api/jornadas', async (req, res) => {
     const toleranciaExtraMin = numero(req.body?.toleranciaExtraMin, 0);
     const status = texto(req.body?.status || 'ATIVO');
     const observacao = texto(req.body?.observacao);
+
+    const trabalhaDomingo = flagSN(req.body?.trabalhaDomingo, 'N');
+    const trabalhaSegunda = flagSN(req.body?.trabalhaSegunda, 'S');
+    const trabalhaTerca = flagSN(req.body?.trabalhaTerca, 'S');
+    const trabalhaQuarta = flagSN(req.body?.trabalhaQuarta, 'S');
+    const trabalhaQuinta = flagSN(req.body?.trabalhaQuinta, 'S');
+    const trabalhaSexta = flagSN(req.body?.trabalhaSexta, 'S');
+    const trabalhaSabado = flagSN(req.body?.trabalhaSabado, 'N');
 
     if (!descricao) {
       return res.status(400).json({
@@ -17502,6 +17529,23 @@ app.post('/api/jornadas', async (req, res) => {
       });
     }
 
+    const diasSelecionados = [
+      trabalhaDomingo,
+      trabalhaSegunda,
+      trabalhaTerca,
+      trabalhaQuarta,
+      trabalhaQuinta,
+      trabalhaSexta,
+      trabalhaSabado
+    ];
+
+    if (!diasSelecionados.includes('S')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione ao menos um dia da semana para a jornada.'
+      });
+    }
+
     const sql = `
       INSERT INTO SF_JORNADA_TRABALHO (
         DESCRICAO,
@@ -17512,9 +17556,16 @@ app.post('/api/jornadas', async (req, res) => {
         CARGA_HORARIA,
         TOLERANCIA_ATRASO_MIN,
         TOLERANCIA_EXTRA_MIN,
+        TRABALHA_DOMINGO,
+        TRABALHA_SEGUNDA,
+        TRABALHA_TERCA,
+        TRABALHA_QUARTA,
+        TRABALHA_QUINTA,
+        TRABALHA_SEXTA,
+        TRABALHA_SABADO,
         STATUS,
         OBSERVACAO
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const params = [
@@ -17526,6 +17577,13 @@ app.post('/api/jornadas', async (req, res) => {
       cargaHoraria || null,
       toleranciaAtrasoMin,
       toleranciaExtraMin,
+      trabalhaDomingo,
+      trabalhaSegunda,
+      trabalhaTerca,
+      trabalhaQuarta,
+      trabalhaQuinta,
+      trabalhaSexta,
+      trabalhaSabado,
       status || 'ATIVO',
       observacao || null
     ];
@@ -17563,6 +17621,14 @@ app.put('/api/jornadas/:id', async (req, res) => {
     const status = texto(req.body?.status || 'ATIVO');
     const observacao = texto(req.body?.observacao);
 
+    const trabalhaDomingo = flagSN(req.body?.trabalhaDomingo, 'N');
+    const trabalhaSegunda = flagSN(req.body?.trabalhaSegunda, 'S');
+    const trabalhaTerca = flagSN(req.body?.trabalhaTerca, 'S');
+    const trabalhaQuarta = flagSN(req.body?.trabalhaQuarta, 'S');
+    const trabalhaQuinta = flagSN(req.body?.trabalhaQuinta, 'S');
+    const trabalhaSexta = flagSN(req.body?.trabalhaSexta, 'S');
+    const trabalhaSabado = flagSN(req.body?.trabalhaSabado, 'N');
+
     if (!id) {
       return res.status(400).json({
         success: false,
@@ -17591,6 +17657,23 @@ app.put('/api/jornadas/:id', async (req, res) => {
       });
     }
 
+    const diasSelecionados = [
+      trabalhaDomingo,
+      trabalhaSegunda,
+      trabalhaTerca,
+      trabalhaQuarta,
+      trabalhaQuinta,
+      trabalhaSexta,
+      trabalhaSabado
+    ];
+
+    if (!diasSelecionados.includes('S')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione ao menos um dia da semana para a jornada.'
+      });
+    }
+
     const [exists] = await pool.query(
       `SELECT ID FROM SF_JORNADA_TRABALHO WHERE ID = ? LIMIT 1`,
       [id]
@@ -17614,6 +17697,13 @@ app.put('/api/jornadas/:id', async (req, res) => {
         CARGA_HORARIA = ?,
         TOLERANCIA_ATRASO_MIN = ?,
         TOLERANCIA_EXTRA_MIN = ?,
+        TRABALHA_DOMINGO = ?,
+        TRABALHA_SEGUNDA = ?,
+        TRABALHA_TERCA = ?,
+        TRABALHA_QUARTA = ?,
+        TRABALHA_QUINTA = ?,
+        TRABALHA_SEXTA = ?,
+        TRABALHA_SABADO = ?,
         STATUS = ?,
         OBSERVACAO = ?
       WHERE ID = ?
@@ -17628,6 +17718,13 @@ app.put('/api/jornadas/:id', async (req, res) => {
       cargaHoraria || null,
       toleranciaAtrasoMin,
       toleranciaExtraMin,
+      trabalhaDomingo,
+      trabalhaSegunda,
+      trabalhaTerca,
+      trabalhaQuarta,
+      trabalhaQuinta,
+      trabalhaSexta,
+      trabalhaSabado,
       status || 'ATIVO',
       observacao || null,
       id
