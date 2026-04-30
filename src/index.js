@@ -17467,6 +17467,8 @@ app.get('/api/jornadas/:id', async (req, res) => {
 
 // POST /api/jornadas
 app.post('/api/jornadas', async (req, res) => {
+
+  console.log(req.body);
   try {
     const descricao = texto(req.body?.descricao);
     const horaInicioExpediente = horaOuNull(req.body?.horaInicioExpediente);
