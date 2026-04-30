@@ -1291,9 +1291,6 @@ function soNumeros(v) {
   return String(v ?? '').replace(/\D+/g, '');
 }
 
-function texto(v) {
-  return String(v ?? '').trim();
-}
 
 function normalizarEmailNullable(v) {
   const s = String(v ?? '').trim().toLowerCase();
