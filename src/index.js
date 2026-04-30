@@ -17272,6 +17272,7 @@ app.delete('/api/calendarios/:id', async (req, res) => {
   }
 });
 
+
 // ======================================================
 // Jornada de Trabalho
 // ======================================================
@@ -17301,6 +17302,45 @@ function horaOuNull(v) {
   return s || null;
 }
 
+function horaParaMinutos(hora) {
+  const valor = texto(hora);
+  if (!valor) return null;
+
+  const partes = valor.split(':');
+  const hh = Number(partes[0]);
+  const mm = Number(partes[1]);
+
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  return (hh * 60) + mm;
+}
+
+function validarSequenciaJornada({
+  horaInicioExpediente,
+  horaSaidaIntervalo,
+  horaRetornoIntervalo,
+  horaFimExpediente
+}) {
+  const inicio = horaParaMinutos(horaInicioExpediente);
+  const saidaIntervalo = horaParaMinutos(horaSaidaIntervalo);
+  const retornoIntervalo = horaParaMinutos(horaRetornoIntervalo);
+  const fim = horaParaMinutos(horaFimExpediente);
+
+  if (
+    inicio === null ||
+    saidaIntervalo === null ||
+    retornoIntervalo === null ||
+    fim === null
+  ) {
+    return 'Informe os 4 horários da jornada.';
+  }
+
+  if (!(inicio < saidaIntervalo && saidaIntervalo < retornoIntervalo && retornoIntervalo < fim)) {
+    return 'A sequência dos horários deve ser: início expediente < saída intervalo < retorno intervalo < fim expediente.';
+  }
+
+  return null;
+}
+
 // GET /api/jornadas
 app.get('/api/jornadas', async (req, res) => {
   try {
@@ -17310,9 +17350,10 @@ app.get('/api/jornadas', async (req, res) => {
       SELECT
         ID,
         DESCRICAO,
-        HORA_ENTRADA,
-        HORA_SAIDA,
-        INTERVALO_MINUTOS,
+        HORA_INICIO_EXPEDIENTE,
+        HORA_SAIDA_INTERVALO,
+        HORA_RETORNO_INTERVALO,
+        HORA_FIM_EXPEDIENTE,
         CARGA_HORARIA,
         TOLERANCIA_ATRASO_MIN,
         TOLERANCIA_EXTRA_MIN,
@@ -17330,12 +17371,14 @@ app.get('/api/jornadas', async (req, res) => {
       sql += `
         WHERE
           DESCRICAO LIKE ?
-          OR HORA_ENTRADA LIKE ?
-          OR HORA_SAIDA LIKE ?
+          OR HORA_INICIO_EXPEDIENTE LIKE ?
+          OR HORA_SAIDA_INTERVALO LIKE ?
+          OR HORA_RETORNO_INTERVALO LIKE ?
+          OR HORA_FIM_EXPEDIENTE LIKE ?
           OR STATUS LIKE ?
           OR CARGA_HORARIA LIKE ?
       `;
-      params.push(like, like, like, like, like);
+      params.push(like, like, like, like, like, like, like);
     }
 
     sql += ` ORDER BY DESCRICAO ASC, ID DESC`;
@@ -17364,9 +17407,10 @@ app.get('/api/jornadas/:id', async (req, res) => {
       SELECT
         ID,
         DESCRICAO,
-        HORA_ENTRADA,
-        HORA_SAIDA,
-        INTERVALO_MINUTOS,
+        HORA_INICIO_EXPEDIENTE,
+        HORA_SAIDA_INTERVALO,
+        HORA_RETORNO_INTERVALO,
+        HORA_FIM_EXPEDIENTE,
         CARGA_HORARIA,
         TOLERANCIA_ATRASO_MIN,
         TOLERANCIA_EXTRA_MIN,
@@ -17405,9 +17449,10 @@ app.get('/api/jornadas/:id', async (req, res) => {
 app.post('/api/jornadas', async (req, res) => {
   try {
     const descricao = texto(req.body?.descricao);
-    const horaEntrada = horaOuNull(req.body?.horaEntrada);
-    const horaSaida = horaOuNull(req.body?.horaSaida);
-    const intervaloMinutos = numero(req.body?.intervaloMinutos, 0);
+    const horaInicioExpediente = horaOuNull(req.body?.horaInicioExpediente);
+    const horaSaidaIntervalo = horaOuNull(req.body?.horaSaidaIntervalo);
+    const horaRetornoIntervalo = horaOuNull(req.body?.horaRetornoIntervalo);
+    const horaFimExpediente = horaOuNull(req.body?.horaFimExpediente);
     const cargaHoraria = texto(req.body?.cargaHoraria);
     const toleranciaAtrasoMin = numero(req.body?.toleranciaAtrasoMin, 0);
     const toleranciaExtraMin = numero(req.body?.toleranciaExtraMin, 0);
@@ -17421,32 +17466,41 @@ app.post('/api/jornadas', async (req, res) => {
       });
     }
 
-    if (!horaEntrada || !horaSaida) {
+    const erroSequencia = validarSequenciaJornada({
+      horaInicioExpediente,
+      horaSaidaIntervalo,
+      horaRetornoIntervalo,
+      horaFimExpediente
+    });
+
+    if (erroSequencia) {
       return res.status(400).json({
         success: false,
-        message: 'Informe a hora de entrada e a hora de saída.'
+        message: erroSequencia
       });
     }
 
     const sql = `
       INSERT INTO SF_JORNADA_TRABALHO (
         DESCRICAO,
-        HORA_ENTRADA,
-        HORA_SAIDA,
-        INTERVALO_MINUTOS,
+        HORA_INICIO_EXPEDIENTE,
+        HORA_SAIDA_INTERVALO,
+        HORA_RETORNO_INTERVALO,
+        HORA_FIM_EXPEDIENTE,
         CARGA_HORARIA,
         TOLERANCIA_ATRASO_MIN,
         TOLERANCIA_EXTRA_MIN,
         STATUS,
         OBSERVACAO
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const params = [
       descricao,
-      horaEntrada,
-      horaSaida,
-      intervaloMinutos,
+      horaInicioExpediente,
+      horaSaidaIntervalo,
+      horaRetornoIntervalo,
+      horaFimExpediente,
       cargaHoraria || null,
       toleranciaAtrasoMin,
       toleranciaExtraMin,
@@ -17476,9 +17530,10 @@ app.put('/api/jornadas/:id', async (req, res) => {
     const id = numero(req.params.id);
 
     const descricao = texto(req.body?.descricao);
-    const horaEntrada = horaOuNull(req.body?.horaEntrada);
-    const horaSaida = horaOuNull(req.body?.horaSaida);
-    const intervaloMinutos = numero(req.body?.intervaloMinutos, 0);
+    const horaInicioExpediente = horaOuNull(req.body?.horaInicioExpediente);
+    const horaSaidaIntervalo = horaOuNull(req.body?.horaSaidaIntervalo);
+    const horaRetornoIntervalo = horaOuNull(req.body?.horaRetornoIntervalo);
+    const horaFimExpediente = horaOuNull(req.body?.horaFimExpediente);
     const cargaHoraria = texto(req.body?.cargaHoraria);
     const toleranciaAtrasoMin = numero(req.body?.toleranciaAtrasoMin, 0);
     const toleranciaExtraMin = numero(req.body?.toleranciaExtraMin, 0);
@@ -17499,10 +17554,17 @@ app.put('/api/jornadas/:id', async (req, res) => {
       });
     }
 
-    if (!horaEntrada || !horaSaida) {
+    const erroSequencia = validarSequenciaJornada({
+      horaInicioExpediente,
+      horaSaidaIntervalo,
+      horaRetornoIntervalo,
+      horaFimExpediente
+    });
+
+    if (erroSequencia) {
       return res.status(400).json({
         success: false,
-        message: 'Informe a hora de entrada e a hora de saída.'
+        message: erroSequencia
       });
     }
 
@@ -17522,9 +17584,10 @@ app.put('/api/jornadas/:id', async (req, res) => {
       UPDATE SF_JORNADA_TRABALHO
       SET
         DESCRICAO = ?,
-        HORA_ENTRADA = ?,
-        HORA_SAIDA = ?,
-        INTERVALO_MINUTOS = ?,
+        HORA_INICIO_EXPEDIENTE = ?,
+        HORA_SAIDA_INTERVALO = ?,
+        HORA_RETORNO_INTERVALO = ?,
+        HORA_FIM_EXPEDIENTE = ?,
         CARGA_HORARIA = ?,
         TOLERANCIA_ATRASO_MIN = ?,
         TOLERANCIA_EXTRA_MIN = ?,
@@ -17535,9 +17598,10 @@ app.put('/api/jornadas/:id', async (req, res) => {
 
     const params = [
       descricao,
-      horaEntrada,
-      horaSaida,
-      intervaloMinutos,
+      horaInicioExpediente,
+      horaSaidaIntervalo,
+      horaRetornoIntervalo,
+      horaFimExpediente,
       cargaHoraria || null,
       toleranciaAtrasoMin,
       toleranciaExtraMin,
@@ -17630,8 +17694,10 @@ app.get('/api/jornadas/:id/vinculos', async (req, res) => {
         U.perfil AS USUARIO_PERFIL,
         U.setor AS USUARIO_SETOR,
         JT.DESCRICAO AS JORNADA_DESCRICAO,
-        JT.HORA_ENTRADA,
-        JT.HORA_SAIDA
+        JT.HORA_INICIO_EXPEDIENTE,
+        JT.HORA_SAIDA_INTERVALO,
+        JT.HORA_RETORNO_INTERVALO,
+        JT.HORA_FIM_EXPEDIENTE
       FROM SF_USUARIO_JORNADA J
       INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
       INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
@@ -17654,7 +17720,7 @@ app.get('/api/jornadas/:id/vinculos', async (req, res) => {
   }
 });
 
-// GET /api/jornadas/vinculos
+// GET /api/jornadas-vinculos
 app.get('/api/jornadas-vinculos', async (req, res) => {
   try {
     const busca = texto(req.query?.q);
@@ -17672,8 +17738,10 @@ app.get('/api/jornadas-vinculos', async (req, res) => {
         U.perfil AS USUARIO_PERFIL,
         U.setor AS USUARIO_SETOR,
         JT.DESCRICAO AS JORNADA_DESCRICAO,
-        JT.HORA_ENTRADA,
-        JT.HORA_SAIDA
+        JT.HORA_INICIO_EXPEDIENTE,
+        JT.HORA_SAIDA_INTERVALO,
+        JT.HORA_RETORNO_INTERVALO,
+        JT.HORA_FIM_EXPEDIENTE
       FROM SF_USUARIO_JORNADA J
       INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
       INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
@@ -17727,7 +17795,11 @@ app.get('/api/jornadas/vinculos/:id', async (req, res) => {
         J.STATUS,
         U.nome AS USUARIO_NOME,
         U.EMAIL AS USUARIO_EMAIL,
-        JT.DESCRICAO AS JORNADA_DESCRICAO
+        JT.DESCRICAO AS JORNADA_DESCRICAO,
+        JT.HORA_INICIO_EXPEDIENTE,
+        JT.HORA_SAIDA_INTERVALO,
+        JT.HORA_RETORNO_INTERVALO,
+        JT.HORA_FIM_EXPEDIENTE
       FROM SF_USUARIO_JORNADA J
       INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
       INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
