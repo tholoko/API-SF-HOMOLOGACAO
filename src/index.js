@@ -17274,14 +17274,20 @@ app.delete('/api/calendarios/:id', async (req, res) => {
 
 
 // ======================================================
-// Jornada de Trabalho
+// JORNADA DE TRABALHO + VÍNCULO USUÁRIO/JORNADA
 // ======================================================
 
-// =========================
-// JORNADAS DE TRABALHO
-// =========================
+// Requer:
+// const express = require('express');
+// const app = express();
+// const mysql = require('mysql2/promise');
+// const pool = mysql.createPool({...});
+// app.use(express.json());
 
-// Helpers locais caso não existam no seu projeto
+
+// =========================
+// HELPERS
+// =========================
 function texto(v) {
   if (v === undefined || v === null) return '';
   return String(v).trim();
@@ -17341,6 +17347,11 @@ function validarSequenciaJornada({
   return null;
 }
 
+
+// =========================
+// JORNADAS
+// =========================
+
 // GET /api/jornadas
 app.get('/api/jornadas', async (req, res) => {
   try {
@@ -17385,12 +17396,12 @@ app.get('/api/jornadas', async (req, res) => {
 
     const [rows] = await pool.query(sql, params);
 
-    res.json({
+    return res.json({
       success: true,
       items: rows
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao listar jornadas.',
       error: err.message
@@ -17398,10 +17409,18 @@ app.get('/api/jornadas', async (req, res) => {
   }
 });
 
+
 // GET /api/jornadas/:id
 app.get('/api/jornadas/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da jornada inválido.'
+      });
+    }
 
     const sql = `
       SELECT
@@ -17432,18 +17451,19 @@ app.get('/api/jornadas/:id', async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       item: rows[0]
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao buscar jornada.',
       error: err.message
     });
   }
 });
+
 
 // POST /api/jornadas
 app.post('/api/jornadas', async (req, res) => {
@@ -17510,19 +17530,20 @@ app.post('/api/jornadas', async (req, res) => {
 
     const [result] = await pool.query(sql, params);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Jornada cadastrada com sucesso.',
       id: result.insertId
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao cadastrar jornada.',
       error: err.message
     });
   }
 });
+
 
 // PUT /api/jornadas/:id
 app.put('/api/jornadas/:id', async (req, res) => {
@@ -17612,18 +17633,19 @@ app.put('/api/jornadas/:id', async (req, res) => {
 
     await pool.query(sql, params);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Jornada atualizada com sucesso.'
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao atualizar jornada.',
       error: err.message
     });
   }
 });
+
 
 // DELETE /api/jornadas/:id
 app.delete('/api/jornadas/:id', async (req, res) => {
@@ -17661,12 +17683,12 @@ app.delete('/api/jornadas/:id', async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Jornada removida com sucesso.'
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao excluir jornada.',
       error: err.message
@@ -17674,10 +17696,22 @@ app.delete('/api/jornadas/:id', async (req, res) => {
   }
 });
 
+
+// =========================
+// VÍNCULOS USUÁRIO/JORNADA
+// =========================
+
 // GET /api/jornadas/:id/vinculos
 app.get('/api/jornadas/:id/vinculos', async (req, res) => {
   try {
     const jornadaId = numero(req.params.id);
+
+    if (!jornadaId) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da jornada inválido.'
+      });
+    }
 
     const sql = `
       SELECT
@@ -17707,18 +17741,19 @@ app.get('/api/jornadas/:id/vinculos', async (req, res) => {
 
     const [rows] = await pool.query(sql, [jornadaId]);
 
-    res.json({
+    return res.json({
       success: true,
       items: rows
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao listar vínculos da jornada.',
       error: err.message
     });
   }
 });
+
 
 // GET /api/jornadas-vinculos
 app.get('/api/jornadas-vinculos', async (req, res) => {
@@ -17767,12 +17802,12 @@ app.get('/api/jornadas-vinculos', async (req, res) => {
 
     const [rows] = await pool.query(sql, params);
 
-    res.json({
+    return res.json({
       success: true,
       items: rows
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao listar vínculos de jornadas.',
       error: err.message
@@ -17780,10 +17815,18 @@ app.get('/api/jornadas-vinculos', async (req, res) => {
   }
 });
 
+
 // GET /api/jornadas/vinculos/:id
 app.get('/api/jornadas/vinculos/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID do vínculo inválido.'
+      });
+    }
 
     const sql = `
       SELECT
@@ -17795,6 +17838,8 @@ app.get('/api/jornadas/vinculos/:id', async (req, res) => {
         J.STATUS,
         U.nome AS USUARIO_NOME,
         U.EMAIL AS USUARIO_EMAIL,
+        U.perfil AS USUARIO_PERFIL,
+        U.setor AS USUARIO_SETOR,
         JT.DESCRICAO AS JORNADA_DESCRICAO,
         JT.HORA_INICIO_EXPEDIENTE,
         JT.HORA_SAIDA_INTERVALO,
@@ -17816,18 +17861,19 @@ app.get('/api/jornadas/vinculos/:id', async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       item: rows[0]
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao buscar vínculo.',
       error: err.message
     });
   }
 });
+
 
 // POST /api/jornadas/vincular-usuario
 app.post('/api/jornadas/vincular-usuario', async (req, res) => {
@@ -17908,19 +17954,20 @@ app.post('/api/jornadas/vincular-usuario', async (req, res) => {
 
     const [result] = await pool.query(sql, params);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Usuário vinculado à jornada com sucesso.',
       id: result.insertId
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao vincular usuário à jornada.',
       error: err.message
     });
   }
 });
+
 
 // PUT /api/jornadas/vinculos/:id
 app.put('/api/jornadas/vinculos/:id', async (req, res) => {
@@ -18000,18 +18047,19 @@ app.put('/api/jornadas/vinculos/:id', async (req, res) => {
 
     await pool.query(sql, params);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Vínculo atualizado com sucesso.'
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao atualizar vínculo.',
       error: err.message
     });
   }
 });
+
 
 // DELETE /api/jornadas/vinculos/:id
 app.delete('/api/jornadas/vinculos/:id', async (req, res) => {
@@ -18037,18 +18085,19 @@ app.delete('/api/jornadas/vinculos/:id', async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Vínculo removido com sucesso.'
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao excluir vínculo.',
       error: err.message
     });
   }
 });
+
 
 // =====================
 // Inicia servidor (sempre por último)
