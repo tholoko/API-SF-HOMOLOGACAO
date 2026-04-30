@@ -17321,15 +17321,15 @@ function horaParaMinutos(hora) {
 }
 
 function validarSequenciaJornada({
-  horaInicioExpediente,
-  horaSaidaIntervalo,
-  horaRetornoIntervalo,
-  horaFimExpediente
+  horaEntrada1,
+  horaSaida1,
+  horaEntrada2,
+  horaSaida2
 }) {
-  const inicio = horaParaMinutos(horaInicioExpediente);
-  const saidaIntervalo = horaParaMinutos(horaSaidaIntervalo);
-  const retornoIntervalo = horaParaMinutos(horaRetornoIntervalo);
-  const fim = horaParaMinutos(horaFimExpediente);
+  const inicio = horaParaMinutos(horaEntrada1);
+  const saidaIntervalo = horaParaMinutos(horaSaida1);
+  const retornoIntervalo = horaParaMinutos(horaEntrada2);
+  const fim = horaParaMinutos(horaSaida2);
 
   if (
     inicio === null ||
@@ -17471,10 +17471,10 @@ app.post('/api/jornadas', async (req, res) => {
   console.log(req.body);
   try {
     const descricao = texto(req.body?.descricao);
-    const horaInicioExpediente = horaOuNull(req.body?.horaInicioExpediente);
-    const horaSaidaIntervalo = horaOuNull(req.body?.horaSaidaIntervalo);
-    const horaRetornoIntervalo = horaOuNull(req.body?.horaRetornoIntervalo);
-    const horaFimExpediente = horaOuNull(req.body?.horaFimExpediente);
+    const horaEntrada1 = horaOuNull(req.body?.horaEntrada1);
+    const horaSaida1 = horaOuNull(req.body?.horaSaida1);
+    const horaEntrada2 = horaOuNull(req.body?.horaEntrada2);
+    const horaSaida2 = horaOuNull(req.body?.horaSaida2);
     const cargaHoraria = texto(req.body?.cargaHoraria);
     const toleranciaAtrasoMin = numero(req.body?.toleranciaAtrasoMin, 0);
     const toleranciaExtraMin = numero(req.body?.toleranciaExtraMin, 0);
@@ -17489,10 +17489,10 @@ app.post('/api/jornadas', async (req, res) => {
     }
 
     const erroSequencia = validarSequenciaJornada({
-      horaInicioExpediente,
-      horaSaidaIntervalo,
-      horaRetornoIntervalo,
-      horaFimExpediente
+      horaEntrada1,
+      horaSaida1,
+      horaEntrada2,
+      horaSaida2
     });
 
     if (erroSequencia) {
@@ -17519,10 +17519,10 @@ app.post('/api/jornadas', async (req, res) => {
 
     const params = [
       descricao,
-      horaInicioExpediente,
-      horaSaidaIntervalo,
-      horaRetornoIntervalo,
-      horaFimExpediente,
+      horaEntrada1,
+      horaSaida1,
+      horaEntrada2,
+      horaSaida2,
       cargaHoraria || null,
       toleranciaAtrasoMin,
       toleranciaExtraMin,
@@ -17553,10 +17553,10 @@ app.put('/api/jornadas/:id', async (req, res) => {
     const id = numero(req.params.id);
 
     const descricao = texto(req.body?.descricao);
-    const horaInicioExpediente = horaOuNull(req.body?.horaInicioExpediente);
-    const horaSaidaIntervalo = horaOuNull(req.body?.horaSaidaIntervalo);
-    const horaRetornoIntervalo = horaOuNull(req.body?.horaRetornoIntervalo);
-    const horaFimExpediente = horaOuNull(req.body?.horaFimExpediente);
+    const horaEntrada1 = horaOuNull(req.body?.horaEntrada1);
+    const horaSaida1 = horaOuNull(req.body?.horaSaida1);
+    const horaEntrada2 = horaOuNull(req.body?.horaEntrada2);
+    const horaSaida2 = horaOuNull(req.body?.horaSaida2);
     const cargaHoraria = texto(req.body?.cargaHoraria);
     const toleranciaAtrasoMin = numero(req.body?.toleranciaAtrasoMin, 0);
     const toleranciaExtraMin = numero(req.body?.toleranciaExtraMin, 0);
@@ -17578,10 +17578,10 @@ app.put('/api/jornadas/:id', async (req, res) => {
     }
 
     const erroSequencia = validarSequenciaJornada({
-      horaInicioExpediente,
-      horaSaidaIntervalo,
-      horaRetornoIntervalo,
-      horaFimExpediente
+      horaEntrada1,
+      horaSaida1,
+      horaEntrada2,
+      horaSaida2
     });
 
     if (erroSequencia) {
@@ -17621,10 +17621,10 @@ app.put('/api/jornadas/:id', async (req, res) => {
 
     const params = [
       descricao,
-      horaInicioExpediente,
-      horaSaidaIntervalo,
-      horaRetornoIntervalo,
-      horaFimExpediente,
+      horaEntrada1,
+      horaSaida1,
+      horaEntrada2,
+      horaSaida2,
       cargaHoraria || null,
       toleranciaAtrasoMin,
       toleranciaExtraMin,
