@@ -1454,7 +1454,10 @@ app.patch('/api/gestao-usuarios/:id(\\d+)/senha-reset', async (req, res) => {
 app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
   try {
     const nome = titleCaseNome(req.body?.nome);
-    const email = normalizarEmail(req.body?.email);
+
+    const emailBruto = texto(req.body?.email);
+    const email = emailBruto ? normalizarEmail(emailBruto) : null;
+
     const senha = texto(req.body?.senha);
     const telefone = somenteNumeros(req.body?.telefone);
     const perfil = texto(req.body?.perfil);
@@ -1463,8 +1466,12 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
     const funcao = texto(req.body?.funcao);
     const data_admissao = nullableDate(req.body?.dataadmissao || req.body?.data_admissao);
 
-    const centro_custo = titleCaseNome(req.body?.localtrabalho || req.body?.local_trabalho || req.body?.centro_custo);
-    const local_trabalho = titleCaseNome(req.body?.unidadetrabalho || req.body?.unidade_trabalho || req.body?.local_trabalho);
+    const centro_custo = titleCaseNome(
+      req.body?.localtrabalho || req.body?.local_trabalho || req.body?.centro_custo
+    );
+    const local_trabalho = titleCaseNome(
+      req.body?.unidadetrabalho || req.body?.unidade_trabalho || req.body?.local_trabalho
+    );
 
     const status = texto(req.body?.status) || 'Ativo';
 
@@ -1485,11 +1492,12 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
     const email_pessoal = emailPessoalBruto ? normalizarEmail(emailPessoalBruto) : null;
 
     const foto = texto(req.body?.foto);
-
     const apelido = texto(req.body?.apelido);
+
     const numero_calcado = String(req.body?.numerocalcado ?? '').trim() !== ''
       ? Number(req.body?.numerocalcado)
       : null;
+
     const tamanhoCamisaBruto = texto(req.body?.tamanhocamisa || req.body?.tamanho_camisa);
     const tamanho_camisa = tamanhoCamisaBruto ? tamanhoCamisaBruto.toUpperCase() : null;
     const tamanho_calca = texto(req.body?.tamanhocalca || req.body?.tamanho_calca);
@@ -1500,9 +1508,10 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
     const temFilhosBruto = texto(req.body?.temfilhos || req.body?.tem_filhos);
     const tem_filhos = temFilhosBruto ? temFilhosBruto.toUpperCase() : 'NAO';
 
-    const quantidade_filhos = tem_filhos === 'SIM' && String(req.body?.quantidadefilhos ?? req.body?.quantidade_filhos ?? '').trim() !== ''
-      ? Number(req.body?.quantidadefilhos ?? req.body?.quantidade_filhos)
-      : null;
+    const quantidade_filhos = tem_filhos === 'SIM' &&
+      String(req.body?.quantidadefilhos ?? req.body?.quantidade_filhos ?? '').trim() !== ''
+        ? Number(req.body?.quantidadefilhos ?? req.body?.quantidade_filhos)
+        : null;
 
     const filhos = tem_filhos === 'SIM'
       ? JSON.stringify(Array.isArray(req.body?.filhos) ? req.body.filhos : [])
@@ -1597,10 +1606,12 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
         email
       }
     });
-    
-    } catch (err) {
+
+  } catch (err) {
     console.error('Erro ao cadastrar usuário:');
     console.error('Mensagem:', err.message);
+    console.error('Code:', err.code || 'N/A');
+    console.error('SQL Message:', err.sqlMessage || 'N/A');
     console.error('Stack:', err.stack);
     console.error('Body recebido:', req.body);
 
@@ -1693,6 +1704,7 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
         message: 'Já existe outro usuário com este CPF.'
       });
     }
+
 
     let fotoFinal = atual.FOTO ?? null;
     if (foto === null) fotoFinal = null;
