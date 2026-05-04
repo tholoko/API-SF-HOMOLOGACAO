@@ -16841,32 +16841,51 @@ app.post('/api/calendarios', async (req, res) => {
     }
 
     if (tipoRecorrencia === 'TROCA_FERIADO') {
-      if (!dataInicialTroca || !dataFinalTroca) {
+      if (!dataInicialTroca) {
         return res.status(400).json({
           success: false,
-          message: 'Informe o período original do feriado.'
+          message: 'Informe a data original do feriado.'
         });
       }
 
-      if (!novaDataInicial || !novaDataFinal) {
+      if (!novaDataInicial) {
         return res.status(400).json({
           success: false,
-          message: 'Informe o novo período da troca.'
+          message: 'Informe a nova data da troca.'
         });
       }
 
-      if (dataFinalTroca < dataInicialTroca) {
-        return res.status(400).json({
-          success: false,
-          message: 'A data final do feriado não pode ser menor que a inicial.'
-        });
-      }
+      if (tipoPeriodo === 'intervalo') {
+        if (!dataFinalTroca) {
+          return res.status(400).json({
+            success: false,
+            message: 'Informe a data final do período original do feriado.'
+          });
+        }
 
-      if (novaDataFinal < novaDataInicial) {
-        return res.status(400).json({
-          success: false,
-          message: 'A nova data final não pode ser menor que a nova data inicial.'
-        });
+        if (!novaDataFinal) {
+          return res.status(400).json({
+            success: false,
+            message: 'Informe a nova data final da troca.'
+          });
+        }
+
+        if (dataFinalTroca < dataInicialTroca) {
+          return res.status(400).json({
+            success: false,
+            message: 'A data final do feriado não pode ser menor que a inicial.'
+          });
+        }
+
+        if (novaDataFinal < novaDataInicial) {
+          return res.status(400).json({
+            success: false,
+            message: 'A nova data final não pode ser menor que a nova data inicial.'
+          });
+        }
+      } else {
+        dataFinalTroca = dataInicialTroca;
+        novaDataFinal = novaDataInicial;
       }
     } else {
       if (!dataInicial) {
@@ -16888,6 +16907,10 @@ app.post('/api/calendarios', async (req, res) => {
           success: false,
           message: 'A data final não pode ser menor que a data inicial.'
         });
+      }
+
+      if (tipoPeriodo !== 'intervalo') {
+        dataFinal = dataInicial;
       }
     }
 
@@ -17251,7 +17274,6 @@ function flagSN(valor, padrao = 'N') {
   return v === 'S' ? 'S' : 'N';
 }
 
-// GET /api/jornadas
 app.get('/api/jornadas', async (req, res) => {
   try {
     const busca = texto(req.query?.q);
@@ -17315,8 +17337,6 @@ app.get('/api/jornadas', async (req, res) => {
   }
 });
 
-
-// GET /api/jornadas/:id
 app.get('/api/jornadas/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
@@ -17377,8 +17397,6 @@ app.get('/api/jornadas/:id', async (req, res) => {
   }
 });
 
-
-// POST /api/jornadas
 app.post('/api/jornadas', async (req, res) => {
 
   try {
@@ -17497,8 +17515,6 @@ app.post('/api/jornadas', async (req, res) => {
   }
 });
 
-
-// PUT /api/jornadas/:id
 app.put('/api/jornadas/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
@@ -17638,8 +17654,6 @@ app.put('/api/jornadas/:id', async (req, res) => {
   }
 });
 
-
-// DELETE /api/jornadas/:id
 app.delete('/api/jornadas/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
@@ -17693,7 +17707,6 @@ app.delete('/api/jornadas/:id', async (req, res) => {
 // VÍNCULOS USUÁRIO/JORNADA
 // =========================
 
-// GET /api/jornadas/:id/vinculos
 app.get('/api/jornadas/:id/vinculos', async (req, res) => {
   try {
     const jornadaId = numero(req.params.id);
@@ -17746,8 +17759,6 @@ app.get('/api/jornadas/:id/vinculos', async (req, res) => {
   }
 });
 
-
-// GET /api/jornadas-vinculos
 app.get('/api/jornadas-vinculos', async (req, res) => {
   try {
     const busca = texto(req.query?.q);
@@ -17807,8 +17818,6 @@ app.get('/api/jornadas-vinculos', async (req, res) => {
   }
 });
 
-
-// GET /api/jornadas/vinculos/:id
 app.get('/api/jornadas/vinculos/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
@@ -17866,8 +17875,6 @@ app.get('/api/jornadas/vinculos/:id', async (req, res) => {
   }
 });
 
-
-// POST /api/jornadas/vincular-usuario
 app.post('/api/jornadas/vincular-usuario', async (req, res) => {
   try {
     const usuarioId = Number(req.body?.usuarioId);
@@ -17960,8 +17967,6 @@ app.post('/api/jornadas/vincular-usuario', async (req, res) => {
   }
 });
 
-
-// PUT /api/jornadas/vinculos/:id
 app.put('/api/jornadas/vinculos/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
@@ -18052,8 +18057,6 @@ app.put('/api/jornadas/vinculos/:id', async (req, res) => {
   }
 });
 
-
-// DELETE /api/jornadas/vinculos/:id
 app.delete('/api/jornadas/vinculos/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
