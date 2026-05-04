@@ -1597,7 +1597,13 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
         email
       }
     });
-  } catch (err) {
+    
+    } catch (err) {
+    console.error('Erro ao cadastrar usuário:');
+    console.error('Mensagem:', err.message);
+    console.error('Stack:', err.stack);
+    console.error('Body recebido:', req.body);
+
     res.status(500).json({
       success: false,
       message: 'Erro ao cadastrar usuário.',
