@@ -1517,15 +1517,27 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
       ? JSON.stringify(Array.isArray(req.body?.filhos) ? req.body.filhos : [])
       : null;
 
-    const [emailExistente] = await pool.query(
+    const [cpfExistente] = await pool.query(
       `SELECT ID FROM SF_USUARIO WHERE CPF = ? LIMIT 1`,
       [cpf]
+    );
+
+    if (cpfExistente.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Já existe usuário com este CPF cadastrado.'
+      });
+    }
+
+    const [emailExistente] = await pool.query(
+      `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
+      [email]
     );
 
     if (emailExistente.length > 0) {
       return res.status(409).json({
         success: false,
-        message: 'Já existe usuário com este CPF cadastrado.'
+        message: 'Já existe usuário com este E-mail cadastrado.'
       });
     }
 
@@ -1702,6 +1714,18 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
       return res.status(409).json({
         success: false,
         message: 'Já existe outro usuário com este CPF.'
+      });
+    }
+
+    const [emailExistente] = await pool.query(
+      `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
+      [email]
+    );
+
+    if (emailExistente.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Já existe usuário com este E-mail cadastrado.'
       });
     }
 
