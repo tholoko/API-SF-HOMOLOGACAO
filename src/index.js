@@ -16783,20 +16783,24 @@ app.post('/api/calendarios', async (req, res) => {
     const periodo = String(req.body?.periodo ?? '').trim();
     const tipoPeriodo = String(req.body?.tipoPeriodo ?? '').trim().toLowerCase();
     const tipoRecorrencia = String(req.body?.tipoRecorrencia ?? 'UNICO').trim().toUpperCase();
+
     const dataInicial = String(req.body?.dataInicial ?? '').trim();
     const dataFinalRaw = String(req.body?.dataFinal ?? '').trim();
+
     const repeteTodoAno = String(req.body?.repeteTodoAno ?? 'N').trim().toUpperCase();
-    const dataInicialTroca = String(req.body?.dataInicialTroca ?? '').trim();
-    const dataFinalTroca = String(req.body?.dataFinalTroca ?? '').trim();
-    const novaDataInicial = String(req.body?.novaDataInicial ?? '').trim();
-    const novaDataFinal = String(req.body?.novaDataFinal ?? '').trim();
+
+    let dataInicialTroca = String(req.body?.dataInicialTroca ?? '').trim();
+    let dataFinalTroca = String(req.body?.dataFinalTroca ?? '').trim();
+    let novaDataInicial = String(req.body?.novaDataInicial ?? '').trim();
+    let novaDataFinal = String(req.body?.novaDataFinal ?? '').trim();
+
     const horaInicio = String(req.body?.horaInicio ?? '').trim();
     const horaFim = String(req.body?.horaFim ?? '').trim();
     const status = String(req.body?.status ?? 'Ativo').trim() || 'Ativo';
     const usuario = String(req.body?.usuario ?? '').trim() || 'SISTEMA';
     const observacao = String(req.body?.observacao ?? '').trim();
 
-    const dataFinal = tipoPeriodo === 'intervalo' ? dataFinalRaw : null;
+    let dataFinal = tipoPeriodo === 'intervalo' ? dataFinalRaw : null;
 
     if (!unidadeTrabalho) {
       return res.status(400).json({
@@ -16912,6 +16916,11 @@ app.post('/api/calendarios', async (req, res) => {
       if (tipoPeriodo !== 'intervalo') {
         dataFinal = dataInicial;
       }
+
+      dataInicialTroca = '';
+      dataFinalTroca = '';
+      novaDataInicial = '';
+      novaDataFinal = '';
     }
 
     const [result] = await pool.query(`
@@ -16939,9 +16948,9 @@ app.post('/api/calendarios', async (req, res) => {
       periodo,
       tipoPeriodo,
       tipoRecorrencia,
-      dataInicial || null,
-      dataFinal,
-      tipoRecorrencia === 'ANUAL' ? 'S' : 'N',
+      tipoRecorrencia === 'TROCA_FERIADO' ? null : (dataInicial || null),
+      tipoRecorrencia === 'TROCA_FERIADO' ? null : (dataFinal || null),
+      tipoRecorrencia === 'ANUAL' || repeteTodoAno === 'S' ? 'S' : 'N',
       dataInicialTroca || null,
       dataFinalTroca || null,
       novaDataInicial || null,
@@ -16968,6 +16977,7 @@ app.post('/api/calendarios', async (req, res) => {
   }
 });
 
+
 app.put('/api/calendarios/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -16975,20 +16985,24 @@ app.put('/api/calendarios/:id', async (req, res) => {
     const periodo = String(req.body?.periodo ?? '').trim();
     const tipoPeriodo = String(req.body?.tipoPeriodo ?? '').trim().toLowerCase();
     const tipoRecorrencia = String(req.body?.tipoRecorrencia ?? 'UNICO').trim().toUpperCase();
+
     const dataInicial = String(req.body?.dataInicial ?? '').trim();
     const dataFinalRaw = String(req.body?.dataFinal ?? '').trim();
+
     const repeteTodoAno = String(req.body?.repeteTodoAno ?? 'N').trim().toUpperCase();
-    const dataInicialTroca = String(req.body?.dataInicialTroca ?? '').trim();
-    const dataFinalTroca = String(req.body?.dataFinalTroca ?? '').trim();
-    const novaDataInicial = String(req.body?.novaDataInicial ?? '').trim();
-    const novaDataFinal = String(req.body?.novaDataFinal ?? '').trim();
+
+    let dataInicialTroca = String(req.body?.dataInicialTroca ?? '').trim();
+    let dataFinalTroca = String(req.body?.dataFinalTroca ?? '').trim();
+    let novaDataInicial = String(req.body?.novaDataInicial ?? '').trim();
+    let novaDataFinal = String(req.body?.novaDataFinal ?? '').trim();
+
     const horaInicio = String(req.body?.horaInicio ?? '').trim();
     const horaFim = String(req.body?.horaFim ?? '').trim();
     const status = String(req.body?.status ?? '').trim() || 'Ativo';
     const usuario = String(req.body?.usuario ?? '').trim() || 'SISTEMA';
     const observacao = String(req.body?.observacao ?? '').trim();
 
-    const dataFinal = tipoPeriodo === 'intervalo' ? dataFinalRaw : null;
+    let dataFinal = tipoPeriodo === 'intervalo' ? dataFinalRaw : null;
 
     if (!id) {
       return res.status(400).json({
@@ -17040,32 +17054,51 @@ app.put('/api/calendarios/:id', async (req, res) => {
     }
 
     if (tipoRecorrencia === 'TROCA_FERIADO') {
-      if (!dataInicialTroca || !dataFinalTroca) {
+      if (!dataInicialTroca) {
         return res.status(400).json({
           success: false,
-          message: 'Informe o período original do feriado.'
+          message: 'Informe a data original do feriado.'
         });
       }
 
-      if (!novaDataInicial || !novaDataFinal) {
+      if (!novaDataInicial) {
         return res.status(400).json({
           success: false,
-          message: 'Informe o novo período da troca.'
+          message: 'Informe a nova data da troca.'
         });
       }
 
-      if (dataFinalTroca < dataInicialTroca) {
-        return res.status(400).json({
-          success: false,
-          message: 'A data final do feriado não pode ser menor que a inicial.'
-        });
-      }
+      if (tipoPeriodo === 'intervalo') {
+        if (!dataFinalTroca) {
+          return res.status(400).json({
+            success: false,
+            message: 'Informe a data final do período original do feriado.'
+          });
+        }
 
-      if (novaDataFinal < novaDataInicial) {
-        return res.status(400).json({
-          success: false,
-          message: 'A nova data final não pode ser menor que a nova data inicial.'
-        });
+        if (!novaDataFinal) {
+          return res.status(400).json({
+            success: false,
+            message: 'Informe a nova data final da troca.'
+          });
+        }
+
+        if (dataFinalTroca < dataInicialTroca) {
+          return res.status(400).json({
+            success: false,
+            message: 'A data final do feriado não pode ser menor que a inicial.'
+          });
+        }
+
+        if (novaDataFinal < novaDataInicial) {
+          return res.status(400).json({
+            success: false,
+            message: 'A nova data final não pode ser menor que a nova data inicial.'
+          });
+        }
+      } else {
+        dataFinalTroca = dataInicialTroca;
+        novaDataFinal = novaDataInicial;
       }
     } else {
       if (!dataInicial) {
@@ -17088,6 +17121,15 @@ app.put('/api/calendarios/:id', async (req, res) => {
           message: 'A data final não pode ser menor que a data inicial.'
         });
       }
+
+      if (tipoPeriodo !== 'intervalo') {
+        dataFinal = dataInicial;
+      }
+
+      dataInicialTroca = '';
+      dataFinalTroca = '';
+      novaDataInicial = '';
+      novaDataFinal = '';
     }
 
     const [result] = await pool.query(`
@@ -17116,9 +17158,9 @@ app.put('/api/calendarios/:id', async (req, res) => {
       periodo,
       tipoPeriodo,
       tipoRecorrencia,
-      dataInicial || null,
-      dataFinal,
-      tipoRecorrencia === 'ANUAL' ? 'S' : 'N',
+      tipoRecorrencia === 'TROCA_FERIADO' ? null : (dataInicial || null),
+      tipoRecorrencia === 'TROCA_FERIADO' ? null : (dataFinal || null),
+      tipoRecorrencia === 'ANUAL' || repeteTodoAno === 'S' ? 'S' : 'N',
       dataInicialTroca || null,
       dataFinalTroca || null,
       novaDataInicial || null,
