@@ -1529,16 +1529,18 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
       });
     }
 
-    const [emailExistente] = await pool.query(
-      `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
-      [email]
-    );
+    if (email && email !== '') {
+      const [emailExistente] = await pool.query(
+        `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
+        [email]
+      );
 
-    if (emailExistente.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: 'Já existe usuário com este E-mail cadastrado.'
-      });
+      if (emailExistente.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'Já existe usuário com este E-mail cadastrado.'
+        });
+      }
     }
 
     const senhaHash = await bcrypt.hash(senha, 12);
@@ -1717,18 +1719,19 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
       });
     }
 
-    const [emailExistente] = await pool.query(
-      `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
-      [email]
-    );
+    if (email && email !== '') {
+      const [emailExistente] = await pool.query(
+        `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
+        [email]
+      );
 
-    if (emailExistente.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: 'Já existe usuário com este E-mail cadastrado.'
-      });
+      if (emailExistente.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'Já existe usuário com este E-mail cadastrado.'
+        });
+      }
     }
-
 
     let fotoFinal = atual.FOTO ?? null;
     if (foto === null) fotoFinal = null;
