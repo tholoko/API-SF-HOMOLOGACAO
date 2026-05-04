@@ -1642,7 +1642,10 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     const id = Number(req.params.id);
 
     const nome = titleCaseNome(req.body?.nome);
-    const email = normalizarEmail(req.body?.email);
+
+    const emailBruto = texto(req.body?.email);
+    const email = emailBruto ? normalizarEmail(emailBruto) : null;
+
     const telefone = somenteNumeros(req.body?.telefone);
     const perfil = texto(req.body?.perfil);
     const setor = titleCaseNome(req.body?.setor);
@@ -1707,28 +1710,30 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
 
     const atual = rows[0];
 
-    const [cpfExistente] = await pool.query(
-      `SELECT ID FROM SF_USUARIO WHERE CPF = ? AND ID <> ? LIMIT 1`,
-      [cpf, id]
-    );
+    if (cpf) {
+      const [cpfExistente] = await pool.query(
+        `SELECT ID FROM SF_USUARIO WHERE CPF = ? AND ID <> ? LIMIT 1`,
+        [cpf, id]
+      );
 
-    if (cpfExistente.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: 'Já existe outro usuário com este CPF.'
-      });
+      if (cpfExistente.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'Já existe outro usuário com este CPF.'
+        });
+      }
     }
 
-    if (email && email !== '') {
+    if (email) {
       const [emailExistente] = await pool.query(
-        `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? LIMIT 1`,
-        [email]
+        `SELECT ID FROM SF_USUARIO WHERE EMAIL = ? AND ID <> ? LIMIT 1`,
+        [email, id]
       );
 
       if (emailExistente.length > 0) {
         return res.status(409).json({
           success: false,
-          message: 'Já existe usuário com este E-mail cadastrado.'
+          message: 'Já existe outro usuário com este E-mail cadastrado.'
         });
       }
     }
@@ -1836,7 +1841,14 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
 
     return res.json({ success: true, message: 'Usuário atualizado com sucesso.' });
   } catch (err) {
-    console.error('Erro PUT /api/gestao-usuarios/:id', err);
+    console.error('Erro PUT /api/gestao-usuarios/:id');
+    console.error('Mensagem:', err.message);
+    console.error('Code:', err.code || 'N/A');
+    console.error('SQL Message:', err.sqlMessage || 'N/A');
+    console.error('SQL State:', err.sqlState || 'N/A');
+    console.error('Stack:', err.stack);
+    console.error('Body recebido:', JSON.stringify(req.body, null, 2));
+
     return res.status(500).json({
       success: false,
       message: 'Erro ao atualizar usuário.',
