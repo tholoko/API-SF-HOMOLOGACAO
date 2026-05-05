@@ -18324,21 +18324,76 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
         ? (mapaBatidas.get(`CPF:${cpfUsuario}`) || [])
         : [];
 
+      const batidasOrdenadas = [...batidasUsuario].sort(
+        (a, b) => new Date(a.DATA_HORA) - new Date(b.DATA_HORA)
+      );
+
       const avaliacao = avaliarInconsistenciaUsuario({
         ehFeriado: feriadoInfo.ehFeriado,
         jornada,
-        batidas: batidasUsuario,
+        batidas: batidasOrdenadas,
         diaSemana
       });
+
+      const trabalhaNoDia = jornada
+        ? verificaSeJornadaTrabalhaNoDia(jornada, diaSemana)
+        : false;
 
       return {
         ...usuario,
         jornadaId: jornada?.JORNADA_ID || null,
         jornadaDescricao: jornada?.DESCRICAO || '',
-        quantidadeBatidas: batidasUsuario.length,
+        quantidadeBatidas: batidasOrdenadas.length,
         inconsistente: avaliacao.inconsistente,
         motivo: avaliacao.motivo,
-        feriado: feriadoInfo.ehFeriado
+        feriado: feriadoInfo.ehFeriado,
+
+        jornada: jornada
+          ? {
+              usuarioId: jornada.USUARIO_ID,
+              jornadaId: jornada.JORNADA_ID,
+              descricao: jornada.DESCRICAO || '',
+              horaInicioExpediente: jornada.HORA_INICIO_EXPEDIENTE || '',
+              horaSaidaIntervalo: jornada.HORA_SAIDA_INTERVALO || '',
+              horaRetornoIntervalo: jornada.HORA_RETORNO_INTERVALO || '',
+              horaFimExpediente: jornada.HORA_FIM_EXPEDIENTE || '',
+              cargaHoraria: jornada.CARGA_HORARIA || '',
+              toleranciaAtrasoMin: Number(jornada.TOLERANCIA_ATRASO_MIN || 0),
+              toleranciaExtraMin: Number(jornada.TOLERANCIA_EXTRA_MIN || 0),
+              trabalhaDomingo: String(jornada.TRABALHA_DOMINGO || '').toUpperCase() === 'S',
+              trabalhaSegunda: String(jornada.TRABALHA_SEGUNDA || '').toUpperCase() === 'S',
+              trabalhaTerca: String(jornada.TRABALHA_TERCA || '').toUpperCase() === 'S',
+              trabalhaQuarta: String(jornada.TRABALHA_QUARTA || '').toUpperCase() === 'S',
+              trabalhaQuinta: String(jornada.TRABALHA_QUINTA || '').toUpperCase() === 'S',
+              trabalhaSexta: String(jornada.TRABALHA_SEXTA || '').toUpperCase() === 'S',
+              trabalhaSabado: String(jornada.TRABALHA_SABADO || '').toUpperCase() === 'S'
+            }
+          : null,
+
+        resumoJornada: jornada
+          ? {
+              trabalhaNoDia,
+              horarioPrevisto: {
+                entrada: jornada.HORA_INICIO_EXPEDIENTE || '',
+                saidaIntervalo: jornada.HORA_SAIDA_INTERVALO || '',
+                retornoIntervalo: jornada.HORA_RETORNO_INTERVALO || '',
+                saida: jornada.HORA_FIM_EXPEDIENTE || ''
+              }
+            }
+          : {
+              trabalhaNoDia: false,
+              horarioPrevisto: null
+            },
+
+        batidas: batidasOrdenadas.map(item => ({
+          usuarioCodigo: item.USUARIO_CODIGO || '',
+          nomeUsuario: item.NOME_USUARIO || '',
+          matricula: item.MATRICULA || '',
+          cpf: normalizarCpf(item.CPF),
+          dataHora: item.DATA_HORA,
+          tipoBatida: item.TIPO_BATIDA || '',
+          hora: formatarHoraBatida(item.DATA_HORA)
+        }))
       };
     });
 
@@ -18467,6 +18522,15 @@ function dataHoraParaMinutos(dataHora) {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+function formatarHoraBatida(dataHora) {
+  if (!dataHora) return '';
+  const d = new Date(dataHora);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
 function avaliarInconsistenciaUsuario({ ehFeriado, jornada, batidas, diaSemana }) {
   if (ehFeriado && batidas.length > 0) {
     return {
@@ -18516,8 +18580,14 @@ function avaliarInconsistenciaUsuario({ ehFeriado, jornada, batidas, diaSemana }
   const inicioEsperado = timeParaMinutos(jornada.HORA_INICIO_EXPEDIENTE);
   const fimEsperado = timeParaMinutos(jornada.HORA_FIM_EXPEDIENTE);
 
-  const batidasOrdenadas = [...batidas].sort((a, b) => new Date(a.DATA_HORA) - new Date(b.DATA_HORA));
-  const primeiraBatida = batidasOrdenadas[0] ? dataHoraParaMinutos(batidasOrdenadas[0].DATA_HORA) : null;
+  const batidasOrdenadas = [...batidas].sort(
+    (a, b) => new Date(a.DATA_HORA) - new Date(b.DATA_HORA)
+  );
+
+  const primeiraBatida = batidasOrdenadas[0]
+    ? dataHoraParaMinutos(batidasOrdenadas[0].DATA_HORA)
+    : null;
+
   const ultimaBatida = batidasOrdenadas[batidasOrdenadas.length - 1]
     ? dataHoraParaMinutos(batidasOrdenadas[batidasOrdenadas.length - 1].DATA_HORA)
     : null;
@@ -18548,7 +18618,6 @@ function avaliarInconsistenciaUsuario({ ehFeriado, jornada, batidas, diaSemana }
     motivo: ''
   };
 }
-
 
 // =====================
 // Inicia servidor (sempre por último)
