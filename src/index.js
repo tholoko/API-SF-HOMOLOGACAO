@@ -17361,7 +17361,7 @@ function horaParaMinutosJornada(hora) {
   return (h * 60) + m;
 }
 
-function validarSequenciaJornada({ horaEntrada1, horaSaida1, horaEntrada2, horaSaida2 }) {
+function validarSequenciaJornadaNova({ horaEntrada1, horaSaida1, horaEntrada2, horaSaida2 }) {
   if (!horaEntrada1 || !horaSaida1 || !horaEntrada2 || !horaSaida2) {
     return 'Informe os 4 horários da jornada: entrada 1, saída 1, entrada 2 e saída 2.';
   }
@@ -17563,7 +17563,7 @@ app.post('/api/jornadas', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Informe a descrição da jornada.' });
     }
 
-    const erroSequencia = validarSequenciaJornada({
+    const erroSequencia = validarSequenciaJornadaNova({
       horaEntrada1,
       horaSaida1,
       horaEntrada2,
@@ -17676,7 +17676,7 @@ app.put('/api/jornadas/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Informe a descrição da jornada.' });
     }
 
-    const erroSequencia = validarSequenciaJornada({
+    const erroSequencia = validarSequenciaJornadaNova({
       horaEntrada1,
       horaSaida1,
       horaEntrada2,
