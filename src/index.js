@@ -18225,8 +18225,7 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
         FILHOS AS filhos,
         CENTRO_CUSTO AS centro_custo,
         CNH_VALIDADE AS cnh_validade,
-        CNH_ARQUIVO AS cnh_arquivo,
-        MATRICULA AS matricula
+        CNH_ARQUIVO AS cnh_arquivo
       FROM SF_USUARIO
       WHERE EMAIL IS NOT NULL
         AND EMAIL <> ''
