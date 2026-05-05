@@ -1367,16 +1367,25 @@ app.post('/api/gestao-usuarios-centro-custo', async (req, res) => {
 
 app.get('/api/usuarios', async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT id, nome, email, setor, telefone, local_trabalho
-         FROM SF_USUARIO
-        WHERE email IS NOT NULL AND email <> ''
+    const [rows] = await pool.query(`
+      SELECT *
+      FROM SF_USUARIO
+      WHERE EMAIL IS NOT NULL
+        AND EMAIL <> ''
         AND status <> 'Desativado'
-        ORDER BY nome ASC`
-    );
-    res.json({ success: true, items: rows });
+      ORDER BY nome ASC
+    `);
+
+    res.json({
+      success: true,
+      items: rows
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Erro ao listar usuários.', error: err.message });
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar usuários.',
+      error: err.message
+    });
   }
 });
 
