@@ -17354,16 +17354,22 @@ function flagSN(valor, padrao = 'N') {
   return v === 'S' ? 'S' : 'N';
 }
 
+function horaParaMinutosJornada(hora) {
+  if (!hora) return null;
+  const [h, m] = String(hora).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return (h * 60) + m;
+}
 
 function validarSequenciaJornada({ horaEntrada1, horaSaida1, horaEntrada2, horaSaida2 }) {
   if (!horaEntrada1 || !horaSaida1 || !horaEntrada2 || !horaSaida2) {
     return 'Informe os 4 horários da jornada: entrada 1, saída 1, entrada 2 e saída 2.';
   }
 
-  const e1 = horaParaMinutos(horaEntrada1);
-  const s1 = horaParaMinutos(horaSaida1);
-  const e2 = horaParaMinutos(horaEntrada2);
-  const s2 = horaParaMinutos(horaSaida2);
+  const e1 = horaParaMinutosJornada(horaEntrada1);
+  const s1 = horaParaMinutosJornada(horaSaida1);
+  const e2 = horaParaMinutosJornada(horaEntrada2);
+  const s2 = horaParaMinutosJornada(horaSaida2);
 
   if ([e1, s1, e2, s2].some(v => v === null)) {
     return 'Um ou mais horários informados são inválidos.';
