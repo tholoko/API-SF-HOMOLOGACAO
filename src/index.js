@@ -18173,6 +18173,386 @@ app.delete('/api/jornadas/vinculos/:id', async (req, res) => {
   }
 });
 
+// Solicitações RH
+
+app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
+  try {
+    const data = String(req.query.data || '').trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parâmetro data inválido. Use o formato YYYY-MM-DD.'
+      });
+    }
+
+    const inicioDia = `${data} 00:00:00`;
+    const proximoDia = `${obterProximoDiaIso(data)} 00:00:00`;
+
+    const [usuarios] = await pool.query(`
+      SELECT
+        id,
+        nome,
+        EMAIL AS email,
+        telefone,
+        senha,
+        perfil,
+        status,
+        setor,
+        FUNCAO AS funcao,
+        DATA_ADMISSAO AS data_admissao,
+        LOCAL_TRABALHO AS local_trabalho,
+        MUST_CHANGE_PASSWORD AS must_change_password,
+        FOTO AS foto,
+        CPF AS cpf,
+        RG AS rg,
+        CNH AS cnh,
+        CNH_CATEGORIA AS cnh_categoria,
+        DATA_NASCIMENTO AS data_nascimento,
+        ESTADO_CIVIL AS estado_civil,
+        TELEFONE_PESSOAL AS telefone_pessoal,
+        EMAIL_PESSOAL AS email_pessoal,
+        APELIDO AS apelido,
+        NUMERO_CALCADO AS numero_calcado,
+        TAMANHO_CAMISA AS tamanho_camisa,
+        TAMANHO_CALCA AS tamanho_calca,
+        SEXO AS sexo,
+        TEM_FILHOS AS tem_filhos,
+        QUANTIDADE_FILHOS AS quantidade_filhos,
+        FILHOS AS filhos,
+        CENTRO_CUSTO AS centro_custo,
+        CNH_VALIDADE AS cnh_validade,
+        CNH_ARQUIVO AS cnh_arquivo,
+        MATRICULA AS matricula
+      FROM SF_USUARIO
+      WHERE EMAIL IS NOT NULL
+        AND EMAIL <> ''
+        AND status <> 'Desativado'
+      ORDER BY nome ASC
+    `);
+
+    const [jornadas] = await pool.query(`
+      SELECT
+        uj.USUARIO_ID,
+        uj.JORNADA_ID,
+        jt.DESCRICAO,
+        jt.HORA_INICIO_EXPEDIENTE,
+        jt.HORA_SAIDA_INTERVALO,
+        jt.HORA_RETORNO_INTERVALO,
+        jt.HORA_FIM_EXPEDIENTE,
+        jt.CARGA_HORARIA,
+        jt.TOLERANCIA_ATRASO_MIN,
+        jt.TOLERANCIA_EXTRA_MIN,
+        jt.TRABALHA_DOMINGO,
+        jt.TRABALHA_SEGUNDA,
+        jt.TRABALHA_TERCA,
+        jt.TRABALHA_QUARTA,
+        jt.TRABALHA_QUINTA,
+        jt.TRABALHA_SEXTA,
+        jt.TRABALHA_SABADO
+      FROM SF_USUARIO_JORNADA uj
+      INNER JOIN SF_JORNADA_TRABALHO jt
+        ON jt.ID = uj.JORNADA_ID
+      WHERE COALESCE(uj.STATUS, 'ATIVO') = 'ATIVO'
+        AND COALESCE(jt.STATUS, 'ATIVO') = 'ATIVO'
+        AND uj.DATA_INICIO <= ?
+        AND (uj.DATA_FIM IS NULL OR uj.DATA_FIM >= ?)
+    `, [data, data]);
+
+    const [batidas] = await pool.query(`
+      SELECT
+        USUARIO_CODIGO,
+        NOME_USUARIO,
+        MATRICULA,
+        DATA_HORA,
+        TIPO_BATIDA
+      FROM SF_PONTO_COLETADO
+      WHERE DATA_HORA >= ?
+        AND DATA_HORA < ?
+      ORDER BY NOME_USUARIO ASC, DATA_HORA ASC
+    `, [inicioDia, proximoDia]);
+
+    const [calendarios] = await pool.query(`
+      SELECT
+        ID,
+        PERIODO,
+        OBSERVACAO,
+        HORAINICIO,
+        HORAFIM,
+        TIPOPERIODO,
+        TIPORECORRENCIA,
+        REPETETODOANO,
+        STATUS,
+        DATAINICIAL,
+        DATAFINAL,
+        DATAINICIALTROCA,
+        DATAFINALTROCA,
+        NOVADATAINICIAL,
+        NOVADATAFINAL
+      FROM SF_CALENDARIO
+      WHERE COALESCE(STATUS, 'ATIVO') = 'ATIVO'
+    `);
+
+    const feriadoInfo = verificarSeDataEhFeriadoBackend(data, calendarios);
+
+    const mapaJornadas = new Map();
+    jornadas.forEach(item => {
+      mapaJornadas.set(Number(item.USUARIO_ID), item);
+    });
+
+    const mapaBatidas = new Map();
+    batidas.forEach(item => {
+      const matricula = String(item.MATRICULA || '').trim();
+      const codigo = String(item.USUARIO_CODIGO || '').trim();
+
+      if (matricula) {
+        const chaveMatricula = `M:${matricula}`;
+        if (!mapaBatidas.has(chaveMatricula)) mapaBatidas.set(chaveMatricula, []);
+        mapaBatidas.get(chaveMatricula).push(item);
+      }
+
+      if (codigo) {
+        const chaveCodigo = `C:${codigo}`;
+        if (!mapaBatidas.has(chaveCodigo)) mapaBatidas.set(chaveCodigo, []);
+        mapaBatidas.get(chaveCodigo).push(item);
+      }
+    });
+
+    const diaSemana = new Date(`${data}T00:00:00`).getDay();
+
+    const items = usuarios.map(usuario => {
+      const jornada = mapaJornadas.get(Number(usuario.id)) || null;
+
+      const batidasUsuario =
+        mapaBatidas.get(`M:${String(usuario.matricula || '').trim()}`) ||
+        mapaBatidas.get(`C:${String(usuario.id || '').trim()}`) ||
+        [];
+
+      const avaliacao = avaliarInconsistenciaUsuario({
+        ehFeriado: feriadoInfo.ehFeriado,
+        jornada,
+        batidas: batidasUsuario,
+        diaSemana
+      });
+
+      return {
+        ...usuario,
+        jornadaId: jornada?.JORNADA_ID || null,
+        jornadaDescricao: jornada?.DESCRICAO || '',
+        quantidadeBatidas: batidasUsuario.length,
+        inconsistente: avaliacao.inconsistente,
+        motivo: avaliacao.motivo,
+        feriado: feriadoInfo.ehFeriado
+      };
+    });
+
+    res.json({
+      success: true,
+      data,
+      feriado: feriadoInfo.ehFeriado,
+      observacoesFeriado: feriadoInfo.observacoes,
+      items
+    });
+  } catch (err) {
+    console.error('Erro ao carregar usuários por data das solicitações:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao carregar usuários das solicitações.',
+      error: err.message
+    });
+  }
+});
+
+function obterProximoDiaIso(dataIso) {
+  const data = new Date(`${dataIso}T00:00:00`);
+  data.setDate(data.getDate() + 1);
+
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+
+  return `${ano}-${mes}-${dia}`;
+}
+
+function normalizarTextoBackend(valor) {
+  return String(valor || '').trim();
+}
+
+function obterTipoRecorrenciaBackend(item) {
+  const tipo = normalizarTextoBackend(item?.TIPORECORRENCIA).toUpperCase();
+  if (tipo) return tipo;
+
+  return normalizarTextoBackend(item?.REPETETODOANO).toUpperCase() === 'S'
+    ? 'ANUAL'
+    : 'UNICO';
+}
+
+function verificarSeDataEhFeriadoBackend(dataIso, itensCalendario) {
+  const mmdd = dataIso.slice(5);
+  const observacoes = [];
+
+  for (const item of itensCalendario) {
+    const status = normalizarTextoBackend(item?.STATUS).toUpperCase();
+    if (status && status !== 'ATIVO') continue;
+
+    const tipo = obterTipoRecorrenciaBackend(item);
+
+    if (tipo === 'TROCA_FERIADO') {
+      const novaInicial = normalizarTextoBackend(item?.NOVADATAINICIAL);
+      const novaFinal = normalizarTextoBackend(item?.NOVADATAFINAL || item?.NOVADATAINICIAL);
+
+      if (novaInicial && dataIso >= novaInicial && dataIso <= novaFinal) {
+        observacoes.push(item?.OBSERVACAO || item?.PERIODO || 'Feriado');
+      }
+
+      continue;
+    }
+
+    const dataInicial = normalizarTextoBackend(item?.DATAINICIAL);
+    const dataFinal = normalizarTextoBackend(item?.DATAFINAL || item?.DATAINICIAL);
+    const tipoPeriodo = normalizarTextoBackend(item?.TIPOPERIODO).toLowerCase();
+
+    if (!dataInicial) continue;
+
+    let ehFeriado = false;
+
+    if (tipo === 'ANUAL') {
+      const inicialMmdd = dataInicial.slice(5);
+      const finalMmdd = dataFinal.slice(5);
+
+      if (tipoPeriodo === 'intervalo') {
+        ehFeriado = mmdd >= inicialMmdd && mmdd <= finalMmdd;
+      } else {
+        ehFeriado = mmdd === inicialMmdd;
+      }
+    } else {
+      if (tipoPeriodo === 'intervalo') {
+        ehFeriado = dataIso >= dataInicial && dataIso <= dataFinal;
+      } else {
+        ehFeriado = dataIso === dataInicial;
+      }
+    }
+
+    if (ehFeriado) {
+      observacoes.push(item?.OBSERVACAO || item?.PERIODO || 'Feriado');
+    }
+  }
+
+  return {
+    ehFeriado: observacoes.length > 0,
+    observacoes
+  };
+}
+
+function verificaSeJornadaTrabalhaNoDia(jornada, diaSemana) {
+  if (!jornada) return false;
+
+  const mapa = {
+    0: jornada.TRABALHA_DOMINGO,
+    1: jornada.TRABALHA_SEGUNDA,
+    2: jornada.TRABALHA_TERCA,
+    3: jornada.TRABALHA_QUARTA,
+    4: jornada.TRABALHA_QUINTA,
+    5: jornada.TRABALHA_SEXTA,
+    6: jornada.TRABALHA_SABADO
+  };
+
+  return String(mapa[diaSemana] || '').toUpperCase() === 'S';
+}
+
+function timeParaMinutos(timeStr) {
+  if (!timeStr) return null;
+  const [h, m] = String(timeStr).split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function dataHoraParaMinutos(dataHora) {
+  const d = new Date(dataHora);
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function avaliarInconsistenciaUsuario({ ehFeriado, jornada, batidas, diaSemana }) {
+  if (ehFeriado && batidas.length > 0) {
+    return {
+      inconsistente: true,
+      motivo: 'Possui batidas registradas em dia de feriado.'
+    };
+  }
+
+  if (!jornada) {
+    return batidas.length > 0
+      ? {
+          inconsistente: true,
+          motivo: 'Usuário sem jornada vinculada e com batidas registradas.'
+        }
+      : {
+          inconsistente: false,
+          motivo: ''
+        };
+  }
+
+  const trabalhaNoDia = verificaSeJornadaTrabalhaNoDia(jornada, diaSemana);
+
+  if (!trabalhaNoDia && batidas.length > 0) {
+    return {
+      inconsistente: true,
+      motivo: 'Possui batidas em dia não previsto na jornada.'
+    };
+  }
+
+  if (trabalhaNoDia && batidas.length === 0) {
+    return {
+      inconsistente: true,
+      motivo: 'Dia previsto na jornada sem nenhuma batida.'
+    };
+  }
+
+  if (!trabalhaNoDia && batidas.length === 0) {
+    return {
+      inconsistente: false,
+      motivo: ''
+    };
+  }
+
+  const toleranciaAtraso = Number(jornada.TOLERANCIA_ATRASO_MIN || 0);
+  const toleranciaExtra = Number(jornada.TOLERANCIA_EXTRA_MIN || 0);
+
+  const inicioEsperado = timeParaMinutos(jornada.HORA_INICIO_EXPEDIENTE);
+  const fimEsperado = timeParaMinutos(jornada.HORA_FIM_EXPEDIENTE);
+
+  const batidasOrdenadas = [...batidas].sort((a, b) => new Date(a.DATA_HORA) - new Date(b.DATA_HORA));
+  const primeiraBatida = batidasOrdenadas[0] ? dataHoraParaMinutos(batidasOrdenadas[0].DATA_HORA) : null;
+  const ultimaBatida = batidasOrdenadas[batidasOrdenadas.length - 1]
+    ? dataHoraParaMinutos(batidasOrdenadas[batidasOrdenadas.length - 1].DATA_HORA)
+    : null;
+
+  if (inicioEsperado != null && primeiraBatida != null && primeiraBatida > inicioEsperado + toleranciaAtraso) {
+    return {
+      inconsistente: true,
+      motivo: 'Primeira batida após a tolerância de atraso da jornada.'
+    };
+  }
+
+  if (fimEsperado != null && ultimaBatida != null && ultimaBatida < fimEsperado - toleranciaExtra) {
+    return {
+      inconsistente: true,
+      motivo: 'Última batida antes do horário esperado de término da jornada.'
+    };
+  }
+
+  if (batidas.length % 2 !== 0) {
+    return {
+      inconsistente: true,
+      motivo: 'Quantidade de batidas ímpar, indicando marcação inconsistente.'
+    };
+  }
+
+  return {
+    inconsistente: false,
+    motivo: ''
+  };
+}
+
 
 // =====================
 // Inicia servidor (sempre por último)
