@@ -1368,7 +1368,39 @@ app.post('/api/gestao-usuarios-centro-custo', async (req, res) => {
 app.get('/api/usuarios', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT *
+      SELECT
+        id,
+        nome,
+        EMAIL AS email,
+        telefone,
+        senha,
+        perfil,
+        status,
+        setor,
+        FUNCAO AS funcao,
+        DATA_ADMISSAO AS data_admissao,
+        LOCAL_TRABALHO AS local_trabalho,
+        MUST_CHANGE_PASSWORD AS must_change_password,
+        FOTO AS foto,
+        CPF AS cpf,
+        RG AS rg,
+        CNH AS cnh,
+        CNH_CATEGORIA AS cnh_categoria,
+        DATA_NASCIMENTO AS data_nascimento,
+        ESTADO_CIVIL AS estado_civil,
+        TELEFONE_PESSOAL AS telefone_pessoal,
+        EMAIL_PESSOAL AS email_pessoal,
+        APELIDO AS apelido,
+        NUMERO_CALCADO AS numero_calcado,
+        TAMANHO_CAMISA AS tamanho_camisa,
+        TAMANHO_CALCA AS tamanho_calca,
+        SEXO AS sexo,
+        TEM_FILHOS AS tem_filhos,
+        QUANTIDADE_FILHOS AS quantidade_filhos,
+        FILHOS AS filhos,
+        CENTRO_CUSTO AS centro_custo,
+        CNH_VALIDADE AS cnh_validade,
+        CNH_ARQUIVO AS cnh_arquivo
       FROM SF_USUARIO
       WHERE EMAIL IS NOT NULL
         AND EMAIL <> ''
@@ -1376,10 +1408,7 @@ app.get('/api/usuarios', async (req, res) => {
       ORDER BY nome ASC
     `);
 
-    res.json({
-      success: true,
-      items: rows
-    });
+    res.json({ success: true, items: rows });
   } catch (err) {
     res.status(500).json({
       success: false,
