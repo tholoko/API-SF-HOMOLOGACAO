@@ -17354,12 +17354,6 @@ function flagSN(valor, padrao = 'N') {
   return v === 'S' ? 'S' : 'N';
 }
 
-function horaParaMinutos(hora) {
-  if (!hora) return null;
-  const [h, m] = String(hora).split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return (h * 60) + m;
-}
 
 function validarSequenciaJornada({ horaEntrada1, horaSaida1, horaEntrada2, horaSaida2 }) {
   if (!horaEntrada1 || !horaSaida1 || !horaEntrada2 || !horaSaida2) {
