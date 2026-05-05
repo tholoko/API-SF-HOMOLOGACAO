@@ -18189,6 +18189,9 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
     const inicioDia = `${data} 00:00:00`;
     const proximoDia = `${obterProximoDiaIso(data)} 00:00:00`;
 
+    const normalizarCpf = (valor) =>
+      String(valor || '').replace(/\D/g, '').trim();
+
     const [usuarios] = await pool.query(`
       SELECT
         id,
@@ -18264,6 +18267,7 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
         USUARIO_CODIGO,
         NOME_USUARIO,
         MATRICULA,
+        CPF,
         DATA_HORA,
         TIPO_BATIDA
       FROM SF_PONTO_COLETADO
@@ -18302,19 +18306,12 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
 
     const mapaBatidas = new Map();
     batidas.forEach(item => {
-      const matricula = String(item.MATRICULA || '').trim();
-      const codigo = String(item.USUARIO_CODIGO || '').trim();
+      const cpf = normalizarCpf(item.CPF);
 
-      if (matricula) {
-        const chaveMatricula = `M:${matricula}`;
-        if (!mapaBatidas.has(chaveMatricula)) mapaBatidas.set(chaveMatricula, []);
-        mapaBatidas.get(chaveMatricula).push(item);
-      }
-
-      if (codigo) {
-        const chaveCodigo = `C:${codigo}`;
-        if (!mapaBatidas.has(chaveCodigo)) mapaBatidas.set(chaveCodigo, []);
-        mapaBatidas.get(chaveCodigo).push(item);
+      if (cpf) {
+        const chaveCpf = `CPF:${cpf}`;
+        if (!mapaBatidas.has(chaveCpf)) mapaBatidas.set(chaveCpf, []);
+        mapaBatidas.get(chaveCpf).push(item);
       }
     });
 
@@ -18322,11 +18319,11 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
 
     const items = usuarios.map(usuario => {
       const jornada = mapaJornadas.get(Number(usuario.id)) || null;
+      const cpfUsuario = normalizarCpf(usuario.cpf);
 
-      const batidasUsuario =
-        mapaBatidas.get(`M:${String(usuario.matricula || '').trim()}`) ||
-        mapaBatidas.get(`C:${String(usuario.id || '').trim()}`) ||
-        [];
+      const batidasUsuario = cpfUsuario
+        ? (mapaBatidas.get(`CPF:${cpfUsuario}`) || [])
+        : [];
 
       const avaliacao = avaliarInconsistenciaUsuario({
         ehFeriado: feriadoInfo.ehFeriado,
