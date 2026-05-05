@@ -17346,13 +17346,88 @@ function validarSequenciaJornada({
 
 
 // =========================
-// JORNADAS
+// JORNADAS / VÍNCULOS
 // =========================
 
 function flagSN(valor, padrao = 'N') {
   const v = String(valor ?? padrao).trim().toUpperCase();
   return v === 'S' ? 'S' : 'N';
 }
+
+function horaParaMinutos(hora) {
+  if (!hora) return null;
+  const [h, m] = String(hora).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return (h * 60) + m;
+}
+
+function validarSequenciaJornada({ horaEntrada1, horaSaida1, horaEntrada2, horaSaida2 }) {
+  if (!horaEntrada1 || !horaSaida1 || !horaEntrada2 || !horaSaida2) {
+    return 'Informe os 4 horários da jornada: entrada 1, saída 1, entrada 2 e saída 2.';
+  }
+
+  const e1 = horaParaMinutos(horaEntrada1);
+  const s1 = horaParaMinutos(horaSaida1);
+  const e2 = horaParaMinutos(horaEntrada2);
+  const s2 = horaParaMinutos(horaSaida2);
+
+  if ([e1, s1, e2, s2].some(v => v === null)) {
+    return 'Um ou mais horários informados são inválidos.';
+  }
+
+  if (!(e1 < s1)) return 'A saída 1 deve ser maior que a entrada 1.';
+  if (!(s1 < e2)) return 'A entrada 2 deve ser maior que a saída 1.';
+  if (!(e2 < s2)) return 'A saída 2 deve ser maior que a entrada 2.';
+
+  return null;
+}
+
+function validarPeriodo(dataInicio, dataFim) {
+  if (!dataInicio) return 'A data de início é obrigatória.';
+  if (dataFim && dataFim < dataInicio) return 'A data fim não pode ser menor que a data início.';
+  return null;
+}
+
+async function existeUsuario(usuarioId) {
+  const [rows] = await pool.query(
+    `SELECT id, nome, EMAIL, setor FROM SF_USUARIO WHERE id = ? LIMIT 1`,
+    [usuarioId]
+  );
+  return rows[0] || null;
+}
+
+async function existeJornada(jornadaId) {
+  const [rows] = await pool.query(
+    `SELECT ID, DESCRICAO FROM SF_JORNADA_TRABALHO WHERE ID = ? LIMIT 1`,
+    [jornadaId]
+  );
+  return rows[0] || null;
+}
+
+async function existeVinculoDuplicado(usuarioId, jornadaId, dataInicio, ignorarId = null, conn = pool) {
+  let sql = `
+    SELECT ID
+    FROM SF_USUARIO_JORNADA
+    WHERE USUARIO_ID = ?
+      AND JORNADA_ID = ?
+      AND DATA_INICIO = ?
+  `;
+  const params = [usuarioId, jornadaId, dataInicio];
+
+  if (ignorarId) {
+    sql += ` AND ID <> ?`;
+    params.push(ignorarId);
+  }
+
+  sql += ` LIMIT 1`;
+
+  const [rows] = await conn.query(sql, params);
+  return rows.length > 0;
+}
+
+// =========================
+// JORNADAS
+// =========================
 
 app.get('/api/jornadas', async (req, res) => {
   try {
@@ -17404,10 +17479,7 @@ app.get('/api/jornadas', async (req, res) => {
 
     const [rows] = await pool.query(sql, params);
 
-    return res.json({
-      success: true,
-      items: rows
-    });
+    return res.json({ success: true, items: rows });
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -17422,13 +17494,10 @@ app.get('/api/jornadas/:id', async (req, res) => {
     const id = numero(req.params.id);
 
     if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID da jornada inválido.'
-      });
+      return res.status(400).json({ success: false, message: 'ID da jornada inválido.' });
     }
 
-    const sql = `
+    const [rows] = await pool.query(`
       SELECT
         ID,
         DESCRICAO,
@@ -17453,21 +17522,13 @@ app.get('/api/jornadas/:id', async (req, res) => {
       FROM SF_JORNADA_TRABALHO
       WHERE ID = ?
       LIMIT 1
-    `;
-
-    const [rows] = await pool.query(sql, [id]);
+    `, [id]);
 
     if (!rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Jornada não encontrada.'
-      });
+      return res.status(404).json({ success: false, message: 'Jornada não encontrada.' });
     }
 
-    return res.json({
-      success: true,
-      item: rows[0]
-    });
+    return res.json({ success: true, item: rows[0] });
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -17478,7 +17539,6 @@ app.get('/api/jornadas/:id', async (req, res) => {
 });
 
 app.post('/api/jornadas', async (req, res) => {
-
   try {
     const descricao = texto(req.body?.descricao);
     const horaEntrada1 = horaOuNull(req.body?.horaEntrada1);
@@ -17500,10 +17560,7 @@ app.post('/api/jornadas', async (req, res) => {
     const trabalhaSabado = flagSN(req.body?.trabalhaSabado, 'N');
 
     if (!descricao) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe a descrição da jornada.'
-      });
+      return res.status(400).json({ success: false, message: 'Informe a descrição da jornada.' });
     }
 
     const erroSequencia = validarSequenciaJornada({
@@ -17514,10 +17571,7 @@ app.post('/api/jornadas', async (req, res) => {
     });
 
     if (erroSequencia) {
-      return res.status(400).json({
-        success: false,
-        message: erroSequencia
-      });
+      return res.status(400).json({ success: false, message: erroSequencia });
     }
 
     const diasSelecionados = [
@@ -17537,7 +17591,7 @@ app.post('/api/jornadas', async (req, res) => {
       });
     }
 
-    const sql = `
+    const [result] = await pool.query(`
       INSERT INTO SF_JORNADA_TRABALHO (
         DESCRICAO,
         HORA_INICIO_EXPEDIENTE,
@@ -17557,9 +17611,7 @@ app.post('/api/jornadas', async (req, res) => {
         STATUS,
         OBSERVACAO
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    const params = [
+    `, [
       descricao,
       horaEntrada1,
       horaSaida1,
@@ -17577,9 +17629,7 @@ app.post('/api/jornadas', async (req, res) => {
       trabalhaSabado,
       status || 'ATIVO',
       observacao || null
-    ];
-
-    const [result] = await pool.query(sql, params);
+    ]);
 
     return res.json({
       success: true,
@@ -17619,17 +17669,11 @@ app.put('/api/jornadas/:id', async (req, res) => {
     const trabalhaSabado = flagSN(req.body?.trabalhaSabado, 'N');
 
     if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID da jornada inválido.'
-      });
+      return res.status(400).json({ success: false, message: 'ID da jornada inválido.' });
     }
 
     if (!descricao) {
-      return res.status(400).json({
-        success: false,
-        message: 'Informe a descrição da jornada.'
-      });
+      return res.status(400).json({ success: false, message: 'Informe a descrição da jornada.' });
     }
 
     const erroSequencia = validarSequenciaJornada({
@@ -17640,10 +17684,7 @@ app.put('/api/jornadas/:id', async (req, res) => {
     });
 
     if (erroSequencia) {
-      return res.status(400).json({
-        success: false,
-        message: erroSequencia
-      });
+      return res.status(400).json({ success: false, message: erroSequencia });
     }
 
     const diasSelecionados = [
@@ -17669,13 +17710,10 @@ app.put('/api/jornadas/:id', async (req, res) => {
     );
 
     if (!exists.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Jornada não encontrada.'
-      });
+      return res.status(404).json({ success: false, message: 'Jornada não encontrada.' });
     }
 
-    const sql = `
+    await pool.query(`
       UPDATE SF_JORNADA_TRABALHO
       SET
         DESCRICAO = ?,
@@ -17696,9 +17734,7 @@ app.put('/api/jornadas/:id', async (req, res) => {
         STATUS = ?,
         OBSERVACAO = ?
       WHERE ID = ?
-    `;
-
-    const params = [
+    `, [
       descricao,
       horaEntrada1,
       horaSaida1,
@@ -17717,9 +17753,7 @@ app.put('/api/jornadas/:id', async (req, res) => {
       status || 'ATIVO',
       observacao || null,
       id
-    ];
-
-    await pool.query(sql, params);
+    ]);
 
     return res.json({
       success: true,
@@ -17739,10 +17773,7 @@ app.delete('/api/jornadas/:id', async (req, res) => {
     const id = numero(req.params.id);
 
     if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID da jornada inválido.'
-      });
+      return res.status(400).json({ success: false, message: 'ID da jornada inválido.' });
     }
 
     const [vinculos] = await pool.query(
@@ -17763,10 +17794,7 @@ app.delete('/api/jornadas/:id', async (req, res) => {
     );
 
     if (!result.affectedRows) {
-      return res.status(404).json({
-        success: false,
-        message: 'Jornada não encontrada.'
-      });
+      return res.status(404).json({ success: false, message: 'Jornada não encontrada.' });
     }
 
     return res.json({
@@ -17782,7 +17810,6 @@ app.delete('/api/jornadas/:id', async (req, res) => {
   }
 });
 
-
 // =========================
 // VÍNCULOS USUÁRIO/JORNADA
 // =========================
@@ -17792,13 +17819,10 @@ app.get('/api/jornadas/:id/vinculos', async (req, res) => {
     const jornadaId = numero(req.params.id);
 
     if (!jornadaId) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID da jornada inválido.'
-      });
+      return res.status(400).json({ success: false, message: 'ID da jornada inválido.' });
     }
 
-    const sql = `
+    const [rows] = await pool.query(`
       SELECT
         J.ID,
         J.USUARIO_ID,
@@ -17818,18 +17842,13 @@ app.get('/api/jornadas/:id/vinculos', async (req, res) => {
         JT.HORA_RETORNO_INTERVALO,
         JT.HORA_FIM_EXPEDIENTE
       FROM SF_USUARIO_JORNADA J
-      INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
-      INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
+      LEFT JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
+      LEFT JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
       WHERE J.JORNADA_ID = ?
-      ORDER BY U.nome ASC, J.DATA_INICIO DESC
-    `;
+      ORDER BY U.nome ASC, J.DATA_INICIO DESC, J.ID DESC
+    `, [jornadaId]);
 
-    const [rows] = await pool.query(sql, [jornadaId]);
-
-    return res.json({
-      success: true,
-      items: rows
-    });
+    return res.json({ success: true, items: rows });
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -17851,6 +17870,8 @@ app.get('/api/jornadas-vinculos', async (req, res) => {
         J.DATA_INICIO,
         J.DATA_FIM,
         J.STATUS,
+        J.CRIADO_EM,
+        J.ATUALIZADO_EM,
         U.nome AS USUARIO_NOME,
         U.EMAIL AS USUARIO_EMAIL,
         U.perfil AS USUARIO_PERFIL,
@@ -17861,8 +17882,8 @@ app.get('/api/jornadas-vinculos', async (req, res) => {
         JT.HORA_RETORNO_INTERVALO,
         JT.HORA_FIM_EXPEDIENTE
       FROM SF_USUARIO_JORNADA J
-      INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
-      INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
+      LEFT JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
+      LEFT JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
     `;
 
     const params = [];
@@ -17881,14 +17902,11 @@ app.get('/api/jornadas-vinculos', async (req, res) => {
       params.push(like, like, like, like, like, like);
     }
 
-    sql += ` ORDER BY U.nome ASC, J.DATA_INICIO DESC`;
+    sql += ` ORDER BY JT.DESCRICAO ASC, J.DATA_INICIO DESC, U.nome ASC, J.ID DESC`;
 
     const [rows] = await pool.query(sql, params);
 
-    return res.json({
-      success: true,
-      items: rows
-    });
+    return res.json({ success: true, items: rows });
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -17903,13 +17921,10 @@ app.get('/api/jornadas/vinculos/:id', async (req, res) => {
     const id = numero(req.params.id);
 
     if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID do vínculo inválido.'
-      });
+      return res.status(400).json({ success: false, message: 'ID do vínculo inválido.' });
     }
 
-    const sql = `
+    const [rows] = await pool.query(`
       SELECT
         J.ID,
         J.USUARIO_ID,
@@ -17917,6 +17932,8 @@ app.get('/api/jornadas/vinculos/:id', async (req, res) => {
         J.DATA_INICIO,
         J.DATA_FIM,
         J.STATUS,
+        J.CRIADO_EM,
+        J.ATUALIZADO_EM,
         U.nome AS USUARIO_NOME,
         U.EMAIL AS USUARIO_EMAIL,
         U.perfil AS USUARIO_PERFIL,
@@ -17927,25 +17944,17 @@ app.get('/api/jornadas/vinculos/:id', async (req, res) => {
         JT.HORA_RETORNO_INTERVALO,
         JT.HORA_FIM_EXPEDIENTE
       FROM SF_USUARIO_JORNADA J
-      INNER JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
-      INNER JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
+      LEFT JOIN SF_USUARIO U ON U.id = J.USUARIO_ID
+      LEFT JOIN SF_JORNADA_TRABALHO JT ON JT.ID = J.JORNADA_ID
       WHERE J.ID = ?
       LIMIT 1
-    `;
-
-    const [rows] = await pool.query(sql, [id]);
+    `, [id]);
 
     if (!rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Vínculo não encontrado.'
-      });
+      return res.status(404).json({ success: false, message: 'Vínculo não encontrado.' });
     }
 
-    return res.json({
-      success: true,
-      item: rows[0]
-    });
+    return res.json({ success: true, item: rows[0] });
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -17970,50 +17979,30 @@ app.post('/api/jornadas/vincular-usuario', async (req, res) => {
       });
     }
 
-    const [usuarioRows] = await pool.query(
-      `SELECT id, nome FROM SF_USUARIO WHERE id = ? LIMIT 1`,
-      [usuarioId]
-    );
-
-    if (!usuarioRows.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuário não encontrado.'
-      });
+    const erroPeriodo = validarPeriodo(dataInicio, dataFim);
+    if (erroPeriodo) {
+      return res.status(400).json({ success: false, message: erroPeriodo });
     }
 
-    const [jornadaRows] = await pool.query(
-      `SELECT ID, DESCRICAO FROM SF_JORNADA_TRABALHO WHERE ID = ? LIMIT 1`,
-      [jornadaId]
-    );
-
-    if (!jornadaRows.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Jornada não encontrada.'
-      });
+    const usuario = await existeUsuario(usuarioId);
+    if (!usuario) {
+      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
     }
 
-    const [duplicado] = await pool.query(
-      `
-        SELECT ID
-        FROM SF_USUARIO_JORNADA
-        WHERE USUARIO_ID = ?
-          AND JORNADA_ID = ?
-          AND DATA_INICIO = ?
-        LIMIT 1
-      `,
-      [usuarioId, jornadaId, dataInicio]
-    );
+    const jornada = await existeJornada(jornadaId);
+    if (!jornada) {
+      return res.status(404).json({ success: false, message: 'Jornada não encontrada.' });
+    }
 
-    if (duplicado.length) {
+    const duplicado = await existeVinculoDuplicado(usuarioId, jornadaId, dataInicio);
+    if (duplicado) {
       return res.status(400).json({
         success: false,
         message: 'Já existe vínculo deste usuário com esta jornada nesta data.'
       });
     }
 
-    const sql = `
+    const [result] = await pool.query(`
       INSERT INTO SF_USUARIO_JORNADA (
         USUARIO_ID,
         JORNADA_ID,
@@ -18021,17 +18010,13 @@ app.post('/api/jornadas/vincular-usuario', async (req, res) => {
         DATA_FIM,
         STATUS
       ) VALUES (?, ?, ?, ?, ?)
-    `;
-
-    const params = [
+    `, [
       usuarioId,
       jornadaId,
       dataInicio,
       dataFim || null,
       status || 'ATIVO'
-    ];
-
-    const [result] = await pool.query(sql, params);
+    ]);
 
     return res.json({
       success: true,
@@ -18047,6 +18032,116 @@ app.post('/api/jornadas/vincular-usuario', async (req, res) => {
   }
 });
 
+app.post('/api/jornadas/vincular-usuarios', async (req, res) => {
+  let conn;
+
+  try {
+    const jornadaId = Number(req.body?.jornadaId);
+    const dataInicio = dataOuNull(req.body?.dataInicio);
+    const dataFim = dataOuNull(req.body?.dataFim);
+    const status = texto(req.body?.status || 'ATIVO');
+    const usuarios = Array.isArray(req.body?.usuarios) ? req.body.usuarios : [];
+
+    const usuarioIds = [...new Set(
+      usuarios
+        .map(v => Number(v))
+        .filter(v => Number.isInteger(v) && v > 0)
+    )];
+
+    if (!jornadaId || !dataInicio || !usuarioIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Jornada, data de início e lista de usuários são obrigatórios.'
+      });
+    }
+
+    const erroPeriodo = validarPeriodo(dataInicio, dataFim);
+    if (erroPeriodo) {
+      return res.status(400).json({ success: false, message: erroPeriodo });
+    }
+
+    const jornada = await existeJornada(jornadaId);
+    if (!jornada) {
+      return res.status(404).json({ success: false, message: 'Jornada não encontrada.' });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const inseridos = [];
+    const ignorados = [];
+
+    for (const usuarioId of usuarioIds) {
+      const [usuarioRows] = await conn.query(
+        `SELECT id, nome FROM SF_USUARIO WHERE id = ? LIMIT 1`,
+        [usuarioId]
+      );
+
+      if (!usuarioRows.length) {
+        ignorados.push({ usuarioId, motivo: 'Usuário não encontrado.' });
+        continue;
+      }
+
+      const duplicado = await existeVinculoDuplicado(usuarioId, jornadaId, dataInicio, null, conn);
+      if (duplicado) {
+        ignorados.push({
+          usuarioId,
+          nome: usuarioRows[0].nome,
+          motivo: 'Já existe vínculo para este usuário nesta jornada e data.'
+        });
+        continue;
+      }
+
+      const [result] = await conn.query(`
+        INSERT INTO SF_USUARIO_JORNADA (
+          USUARIO_ID,
+          JORNADA_ID,
+          DATA_INICIO,
+          DATA_FIM,
+          STATUS
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        usuarioId,
+        jornadaId,
+        dataInicio,
+        dataFim || null,
+        status || 'ATIVO'
+      ]);
+
+      inseridos.push({
+        id: result.insertId,
+        usuarioId,
+        nome: usuarioRows[0].nome
+      });
+    }
+
+    await conn.commit();
+    conn.release();
+
+    return res.json({
+      success: true,
+      message: inseridos.length
+        ? 'Processamento dos vínculos concluído com sucesso.'
+        : 'Nenhum vínculo foi inserido.',
+      inseridos,
+      ignorados
+    });
+  } catch (err) {
+    if (conn) {
+      try {
+        await conn.rollback();
+        conn.release();
+      } catch (_) {}
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao vincular usuários à jornada.',
+      error: err.message
+    });
+  }
+});
+
 app.put('/api/jornadas/vinculos/:id', async (req, res) => {
   try {
     const id = numero(req.params.id);
@@ -18057,10 +18152,7 @@ app.put('/api/jornadas/vinculos/:id', async (req, res) => {
     const status = texto(req.body?.status || 'ATIVO');
 
     if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID do vínculo inválido.'
-      });
+      return res.status(400).json({ success: false, message: 'ID do vínculo inválido.' });
     }
 
     if (!usuarioId || !jornadaId || !dataInicio) {
@@ -18070,39 +18162,39 @@ app.put('/api/jornadas/vinculos/:id', async (req, res) => {
       });
     }
 
+    const erroPeriodo = validarPeriodo(dataInicio, dataFim);
+    if (erroPeriodo) {
+      return res.status(400).json({ success: false, message: erroPeriodo });
+    }
+
     const [exists] = await pool.query(
       `SELECT ID FROM SF_USUARIO_JORNADA WHERE ID = ? LIMIT 1`,
       [id]
     );
 
     if (!exists.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Vínculo não encontrado.'
-      });
+      return res.status(404).json({ success: false, message: 'Vínculo não encontrado.' });
     }
 
-    const [duplicado] = await pool.query(
-      `
-        SELECT ID
-        FROM SF_USUARIO_JORNADA
-        WHERE USUARIO_ID = ?
-          AND JORNADA_ID = ?
-          AND DATA_INICIO = ?
-          AND ID <> ?
-        LIMIT 1
-      `,
-      [usuarioId, jornadaId, dataInicio, id]
-    );
+    const usuario = await existeUsuario(usuarioId);
+    if (!usuario) {
+      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
+    }
 
-    if (duplicado.length) {
+    const jornada = await existeJornada(jornadaId);
+    if (!jornada) {
+      return res.status(404).json({ success: false, message: 'Jornada não encontrada.' });
+    }
+
+    const duplicado = await existeVinculoDuplicado(usuarioId, jornadaId, dataInicio, id);
+    if (duplicado) {
       return res.status(400).json({
         success: false,
         message: 'Já existe outro vínculo igual para este usuário.'
       });
     }
 
-    const sql = `
+    await pool.query(`
       UPDATE SF_USUARIO_JORNADA
       SET
         USUARIO_ID = ?,
@@ -18111,18 +18203,14 @@ app.put('/api/jornadas/vinculos/:id', async (req, res) => {
         DATA_FIM = ?,
         STATUS = ?
       WHERE ID = ?
-    `;
-
-    const params = [
+    `, [
       usuarioId,
       jornadaId,
       dataInicio,
       dataFim || null,
       status || 'ATIVO',
       id
-    ];
-
-    await pool.query(sql, params);
+    ]);
 
     return res.json({
       success: true,
@@ -18142,10 +18230,7 @@ app.delete('/api/jornadas/vinculos/:id', async (req, res) => {
     const id = numero(req.params.id);
 
     if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID do vínculo inválido.'
-      });
+      return res.status(400).json({ success: false, message: 'ID do vínculo inválido.' });
     }
 
     const [result] = await pool.query(
@@ -18154,10 +18239,7 @@ app.delete('/api/jornadas/vinculos/:id', async (req, res) => {
     );
 
     if (!result.affectedRows) {
-      return res.status(404).json({
-        success: false,
-        message: 'Vínculo não encontrado.'
-      });
+      return res.status(404).json({ success: false, message: 'Vínculo não encontrado.' });
     }
 
     return res.json({
