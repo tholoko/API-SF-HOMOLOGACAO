@@ -18431,6 +18431,7 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
       WHERE EMAIL IS NOT NULL
         AND EMAIL <> ''
         AND status <> 'Desativado'
+        AND BATE_PONTO = 1
       ORDER BY nome ASC
     `);
 
