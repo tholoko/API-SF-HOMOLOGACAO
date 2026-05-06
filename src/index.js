@@ -18960,8 +18960,18 @@ app.get('/api/solicitacoes/justificativas-ponto', async (req, res) => {
         funcionario_nome AS funcionarioNome,
         DATE_FORMAT(data_referencia, '%Y-%m-%d') AS dataReferencia,
         tipo_justificativa AS tipoJustificativa,
+        tipo_periodo AS tipoPeriodo,
+        dia_todo AS diaTodo,
+        TIME_FORMAT(hora_inicial, '%H:%i') AS horaInicial,
+        TIME_FORMAT(hora_final, '%H:%i') AS horaFinal,
+        diferenca_minutos AS diferencaMinutos,
+        diferenca_formatada AS diferencaFormatada,
         descricao,
         anexo_referencia AS anexoReferencia,
+        nome_arquivo AS nomeArquivo,
+        caminho_arquivo AS caminhoArquivo,
+        mime_arquivo AS mimeArquivo,
+        tamanho_arquivo AS tamanhoArquivo,
         status_gestor AS statusGestor,
         observacao_gestor AS observacaoGestor,
         gestor_usuario AS gestorUsuario,
@@ -18997,44 +19007,49 @@ app.post('/api/solicitacoes/justificativas-ponto', async (req, res) => {
     const funcionarioId = String(req.body?.funcionarioId || '').trim();
     const funcionarioNome = String(req.body?.funcionarioNome || '').trim();
     const dataReferencia = String(req.body?.dataReferencia || '').trim();
-    const tipoJustificativa = String(req.body?.tipoJustificativa || '').trim();
+    const tipoJustificativa = String(req.body?.tipoJustificativa || '').trim().toUpperCase();
+    const tipoPeriodo = String(req.body?.tipoPeriodo || 'DIA_TODO').trim().toUpperCase();
+    const diaTodo = String(req.body?.diaTodo || (tipoPeriodo === 'DIA_TODO' ? 'S' : 'N')).trim().toUpperCase();
+    const horaInicial = String(req.body?.horaInicial || '').trim();
+    const horaFinal = String(req.body?.horaFinal || '').trim();
+    const diferencaMinutos = Number(req.body?.diferencaMinutos || 0);
+    const diferencaFormatada = String(req.body?.diferencaFormatada || '').trim();
     const descricao = String(req.body?.descricao || '').trim();
     const anexoReferencia = String(req.body?.anexoReferencia || '').trim();
+    const nomeArquivo = String(req.body?.nomeArquivo || '').trim();
+    const caminhoArquivo = String(req.body?.caminhoArquivo || '').trim();
+    const mimeArquivo = String(req.body?.mimeArquivo || '').trim();
+    const tamanhoArquivo = Number(req.body?.tamanhoArquivo || 0);
     const criadoPor = String(req.body?.criadoPor || '').trim();
 
     if (!funcionarioId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Funcionário não informado.'
-      });
+      return res.status(400).json({ success: false, message: 'Funcionário não informado.' });
     }
 
     if (!funcionarioNome) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nome do funcionário não informado.'
-      });
+      return res.status(400).json({ success: false, message: 'Nome do funcionário não informado.' });
     }
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataReferencia)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data de referência inválida. Use o formato YYYY-MM-DD.'
-      });
+      return res.status(400).json({ success: false, message: 'Data de referência inválida. Use o formato YYYY-MM-DD.' });
     }
 
     if (!tipoJustificativa) {
-      return res.status(400).json({
-        success: false,
-        message: 'Tipo de justificativa não informado.'
-      });
+      return res.status(400).json({ success: false, message: 'Tipo de justificativa não informado.' });
+    }
+
+    if (!['DIA_TODO', 'PERIODO'].includes(tipoPeriodo)) {
+      return res.status(400).json({ success: false, message: 'Tipo de período inválido.' });
+    }
+
+    if (tipoPeriodo === 'PERIODO') {
+      if (!/^\d{2}:\d{2}$/.test(horaInicial) || !/^\d{2}:\d{2}$/.test(horaFinal)) {
+        return res.status(400).json({ success: false, message: 'Informe hora inicial e final válidas no formato HH:mm.' });
+      }
     }
 
     if (!descricao) {
-      return res.status(400).json({
-        success: false,
-        message: 'Descrição da justificativa não informada.'
-      });
+      return res.status(400).json({ success: false, message: 'Descrição da justificativa não informada.' });
     }
 
     const [result] = await pool.query(`
@@ -19043,21 +19058,41 @@ app.post('/api/solicitacoes/justificativas-ponto', async (req, res) => {
         funcionario_nome,
         data_referencia,
         tipo_justificativa,
+        tipo_periodo,
+        dia_todo,
+        hora_inicial,
+        hora_final,
+        diferenca_minutos,
+        diferenca_formatada,
         descricao,
         anexo_referencia,
+        nome_arquivo,
+        caminho_arquivo,
+        mime_arquivo,
+        tamanho_arquivo,
         status_gestor,
         status_rh,
         criado_por,
         criado_em,
         atualizado_em
-      ) VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE', 'PENDENTE', ?, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 'PENDENTE', ?, NOW(), NOW())
     `, [
       funcionarioId,
       funcionarioNome,
       dataReferencia,
       tipoJustificativa,
+      tipoPeriodo,
+      diaTodo === 'S' ? 'S' : 'N',
+      tipoPeriodo === 'PERIODO' ? horaInicial : null,
+      tipoPeriodo === 'PERIODO' ? horaFinal : null,
+      Number.isFinite(diferencaMinutos) ? diferencaMinutos : 0,
+      diferencaFormatada || null,
       descricao,
       anexoReferencia || null,
+      nomeArquivo || null,
+      caminhoArquivo || null,
+      mimeArquivo || null,
+      Number.isFinite(tamanhoArquivo) ? tamanhoArquivo : null,
       criadoPor || null
     ]);
 
@@ -19175,8 +19210,18 @@ app.get('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
         funcionario_nome AS funcionarioNome,
         DATE_FORMAT(data_referencia, '%Y-%m-%d') AS dataReferencia,
         tipo_justificativa AS tipoJustificativa,
+        tipo_periodo AS tipoPeriodo,
+        dia_todo AS diaTodo,
+        TIME_FORMAT(hora_inicial, '%H:%i') AS horaInicial,
+        TIME_FORMAT(hora_final, '%H:%i') AS horaFinal,
+        diferenca_minutos AS diferencaMinutos,
+        diferenca_formatada AS diferencaFormatada,
         descricao,
         anexo_referencia AS anexoReferencia,
+        nome_arquivo AS nomeArquivo,
+        caminho_arquivo AS caminhoArquivo,
+        mime_arquivo AS mimeArquivo,
+        tamanho_arquivo AS tamanhoArquivo,
         status_gestor AS statusGestor,
         observacao_gestor AS observacaoGestor,
         gestor_usuario AS gestorUsuario,
@@ -19221,50 +19266,52 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
     const funcionarioId = String(req.body?.funcionarioId || '').trim();
     const funcionarioNome = String(req.body?.funcionarioNome || '').trim();
     const dataReferencia = String(req.body?.dataReferencia || '').trim();
-    const tipoJustificativa = String(req.body?.tipoJustificativa || '').trim();
+    const tipoJustificativa = String(req.body?.tipoJustificativa || '').trim().toUpperCase();
+    const tipoPeriodo = String(req.body?.tipoPeriodo || 'DIA_TODO').trim().toUpperCase();
+    const diaTodo = String(req.body?.diaTodo || (tipoPeriodo === 'DIA_TODO' ? 'S' : 'N')).trim().toUpperCase();
+    const horaInicial = String(req.body?.horaInicial || '').trim();
+    const horaFinal = String(req.body?.horaFinal || '').trim();
+    const diferencaMinutos = Number(req.body?.diferencaMinutos || 0);
+    const diferencaFormatada = String(req.body?.diferencaFormatada || '').trim();
     const descricao = String(req.body?.descricao || '').trim();
     const anexoReferencia = String(req.body?.anexoReferencia || '').trim();
+    const nomeArquivo = String(req.body?.nomeArquivo || '').trim();
+    const caminhoArquivo = String(req.body?.caminhoArquivo || '').trim();
+    const mimeArquivo = String(req.body?.mimeArquivo || '').trim();
+    const tamanhoArquivo = Number(req.body?.tamanhoArquivo || 0);
 
     if (!id || Number.isNaN(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID da justificativa inválido.'
-      });
+      return res.status(400).json({ success: false, message: 'ID da justificativa inválido.' });
     }
 
     if (!funcionarioId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Funcionário não informado.'
-      });
+      return res.status(400).json({ success: false, message: 'Funcionário não informado.' });
     }
 
     if (!funcionarioNome) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nome do funcionário não informado.'
-      });
+      return res.status(400).json({ success: false, message: 'Nome do funcionário não informado.' });
     }
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataReferencia)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data de referência inválida. Use o formato YYYY-MM-DD.'
-      });
+      return res.status(400).json({ success: false, message: 'Data de referência inválida. Use o formato YYYY-MM-DD.' });
     }
 
     if (!tipoJustificativa) {
-      return res.status(400).json({
-        success: false,
-        message: 'Tipo de justificativa não informado.'
-      });
+      return res.status(400).json({ success: false, message: 'Tipo de justificativa não informado.' });
+    }
+
+    if (!['DIA_TODO', 'PERIODO'].includes(tipoPeriodo)) {
+      return res.status(400).json({ success: false, message: 'Tipo de período inválido.' });
+    }
+
+    if (tipoPeriodo === 'PERIODO') {
+      if (!/^\d{2}:\d{2}$/.test(horaInicial) || !/^\d{2}:\d{2}$/.test(horaFinal)) {
+        return res.status(400).json({ success: false, message: 'Informe hora inicial e final válidas no formato HH:mm.' });
+      }
     }
 
     if (!descricao) {
-      return res.status(400).json({
-        success: false,
-        message: 'Descrição da justificativa não informada.'
-      });
+      return res.status(400).json({ success: false, message: 'Descrição da justificativa não informada.' });
     }
 
     const [result] = await pool.query(`
@@ -19274,8 +19321,18 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
         funcionario_nome = ?,
         data_referencia = ?,
         tipo_justificativa = ?,
+        tipo_periodo = ?,
+        dia_todo = ?,
+        hora_inicial = ?,
+        hora_final = ?,
+        diferenca_minutos = ?,
+        diferenca_formatada = ?,
         descricao = ?,
         anexo_referencia = ?,
+        nome_arquivo = ?,
+        caminho_arquivo = ?,
+        mime_arquivo = ?,
+        tamanho_arquivo = ?,
         atualizado_em = NOW()
       WHERE id = ?
     `, [
@@ -19283,8 +19340,18 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
       funcionarioNome,
       dataReferencia,
       tipoJustificativa,
+      tipoPeriodo,
+      diaTodo === 'S' ? 'S' : 'N',
+      tipoPeriodo === 'PERIODO' ? horaInicial : null,
+      tipoPeriodo === 'PERIODO' ? horaFinal : null,
+      Number.isFinite(diferencaMinutos) ? diferencaMinutos : 0,
+      diferencaFormatada || null,
       descricao,
       anexoReferencia || null,
+      nomeArquivo || null,
+      caminhoArquivo || null,
+      mimeArquivo || null,
+      Number.isFinite(tamanhoArquivo) ? tamanhoArquivo : null,
       id
     ]);
 
@@ -19308,6 +19375,57 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
     });
   }
 });
+
+const pastaUploadsJustificativas = path.join(__dirname, 'uploads', 'justificativas-ponto');
+fs.mkdirSync(pastaUploadsJustificativas, { recursive: true });
+
+const storageJustificativas = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, pastaUploadsJustificativas),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '');
+    const nomeBase = path.basename(file.originalname || 'arquivo', ext)
+      .replace(/[^a-zA-Z0-9-_]/g, '_')
+      .slice(0, 80);
+
+    cb(null, `${Date.now()}-${nomeBase}${ext}`);
+  }
+});
+
+const uploadJustificativaPonto = multer({
+  storage: storageJustificativas,
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
+
+app.post('/api/solicitacoes/justificativas-ponto/upload', uploadJustificativaPonto.single('arquivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Arquivo não enviado.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      item: {
+        anexoReferencia: req.file.originalname,
+        nomeArquivo: req.file.originalname,
+        caminhoArquivo: `/uploads/justificativas-ponto/${req.file.filename}`,
+        mimeArquivo: req.file.mimetype,
+        tamanhoArquivo: req.file.size
+      }
+    });
+  } catch (err) {
+    console.error('Erro ao enviar anexo da justificativa:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao enviar anexo.',
+      error: err.message
+    });
+  }
+});
+
+app.use('/uploads/justificativas-ponto', express.static(path.join(__dirname, 'uploads', 'justificativas-ponto')));
 
 // =====================
 // Inicia servidor (sempre por último)
