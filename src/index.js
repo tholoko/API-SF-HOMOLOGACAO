@@ -18424,7 +18424,9 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
         FILHOS AS filhos,
         CENTRO_CUSTO AS centro_custo,
         CNH_VALIDADE AS cnh_validade,
-        CNH_ARQUIVO AS cnh_arquivo
+        CNH_ARQUIVO AS cnh_arquivo,
+        BATE_PONTO AS bate_ponto,
+        DATA_INICIO_BATE_PONTO AS data_inicio_bate_ponto
       FROM SF_USUARIO
       WHERE EMAIL IS NOT NULL
         AND EMAIL <> ''
@@ -18527,12 +18529,34 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
         (a, b) => new Date(a.DATA_HORA) - new Date(b.DATA_HORA)
       );
 
-      const avaliacao = avaliarInconsistenciaUsuario({
-        ehFeriado: feriadoInfo.ehFeriado,
-        jornada,
-        batidas: batidasOrdenadas,
-        diaSemana
-      });
+      const batePonto = Number(
+        usuario.bate_ponto ??
+        usuario.BATE_PONTO ??
+        0
+      ) === 1;
+
+      const dataInicioBatePonto = String(
+        usuario.data_inicio_bate_ponto ??
+        usuario.DATA_INICIO_BATE_PONTO ??
+        ''
+      ).trim().slice(0, 10);
+
+      const deveValidarPonto =
+        batePonto &&
+        !!dataInicioBatePonto &&
+        data >= dataInicioBatePonto;
+
+      const avaliacao = deveValidarPonto
+        ? avaliarInconsistenciaUsuario({
+            ehFeriado: feriadoInfo.ehFeriado,
+            jornada,
+            batidas: batidasOrdenadas,
+            diaSemana
+          })
+        : {
+            inconsistente: false,
+            motivo: ''
+          };
 
       const diasSemanaJornada = jornada
         ? {
@@ -18560,6 +18584,9 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
 
       return {
         ...usuario,
+        batePonto,
+        dataInicioBatePonto,
+        validaPontoHoje: deveValidarPonto,
         jornadaId: jornada?.JORNADA_ID || null,
         jornadaDescricao: jornada?.DESCRICAO || '',
         quantidadeBatidas: batidasOrdenadas.length,
