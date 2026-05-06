@@ -19,11 +19,17 @@ import AdmZip from 'adm-zip';
 import zlib from 'node:zlib';
 import https from 'node:https';
 import http from 'node:http';
+import { fileURLToPath } from 'node:url';
 
 
 
 import { titleCaseNome, normalizarEmail, somenteNumeros } from './utils.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const pastaUploadsJustificativas = path.join(__dirname, 'uploads', 'justificativas-ponto');
+fs.mkdirSync(pastaUploadsJustificativas, { recursive: true });
 
 
 function getEnv(name, required = true) {
@@ -19376,7 +19382,10 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
   }
 });
 
-const pastaUploadsJustificativas = path.join(__dirname, 'uploads', 'justificativas-ponto');
+const pastaUploadsJustificativas = path.join(
+  DIRETORIO_VOLUME_anexos,
+  'justificativas-ponto'
+);
 fs.mkdirSync(pastaUploadsJustificativas, { recursive: true });
 
 const storageJustificativas = multer.diskStorage({
@@ -19425,7 +19434,7 @@ app.post('/api/solicitacoes/justificativas-ponto/upload', uploadJustificativaPon
   }
 });
 
-app.use('/uploads/justificativas-ponto', express.static(path.join(__dirname, 'uploads', 'justificativas-ponto')));
+app.use('/uploads/justificativas-ponto', express.static(pastaUploadsJustificativas));
 
 // =====================
 // Inicia servidor (sempre por último)
