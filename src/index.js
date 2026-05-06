@@ -18924,6 +18924,391 @@ function avaliarInconsistenciaUsuario({ ehFeriado, jornada, batidas, diaSemana }
   };
 }
 
+// Justificativa de POnto
+
+app.get('/api/solicitacoes/justificativas-ponto', async (req, res) => {
+  try {
+    const data = String(req.query.data || '').trim();
+    const funcionarioId = String(req.query.funcionarioId || '').trim();
+
+    const filtros = [];
+    const params = [];
+
+    if (data) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Parâmetro data inválido. Use o formato YYYY-MM-DD.'
+        });
+      }
+
+      filtros.push('data_referencia = ?');
+      params.push(data);
+    }
+
+    if (funcionarioId) {
+      filtros.push('funcionario_id = ?');
+      params.push(funcionarioId);
+    }
+
+    const where = filtros.length ? `WHERE ${filtros.join(' AND ')}` : '';
+
+    const [rows] = await pool.query(`
+      SELECT
+        id,
+        funcionario_id AS funcionarioId,
+        funcionario_nome AS funcionarioNome,
+        DATE_FORMAT(data_referencia, '%Y-%m-%d') AS dataReferencia,
+        tipo_justificativa AS tipoJustificativa,
+        descricao,
+        anexo_referencia AS anexoReferencia,
+        status_gestor AS statusGestor,
+        observacao_gestor AS observacaoGestor,
+        gestor_usuario AS gestorUsuario,
+        gestor_data AS gestorData,
+        status_rh AS statusRh,
+        observacao_rh AS observacaoRh,
+        rh_usuario AS rhUsuario,
+        rh_data AS rhData,
+        criado_por AS criadoPor,
+        criado_em AS criadoEm,
+        atualizado_em AS atualizadoEm
+      FROM SF_SOLICITACOES_JUSTIFICATIVAS_PONTO
+      ${where}
+      ORDER BY criado_em DESC, id DESC
+    `, params);
+
+    return res.json({
+      success: true,
+      items: Array.isArray(rows) ? rows : []
+    });
+  } catch (err) {
+    console.error('Erro ao listar justificativas de ponto:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao listar justificativas de ponto.',
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/solicitacoes/justificativas-ponto', async (req, res) => {
+  try {
+    const funcionarioId = String(req.body?.funcionarioId || '').trim();
+    const funcionarioNome = String(req.body?.funcionarioNome || '').trim();
+    const dataReferencia = String(req.body?.dataReferencia || '').trim();
+    const tipoJustificativa = String(req.body?.tipoJustificativa || '').trim();
+    const descricao = String(req.body?.descricao || '').trim();
+    const anexoReferencia = String(req.body?.anexoReferencia || '').trim();
+    const criadoPor = String(req.body?.criadoPor || '').trim();
+
+    if (!funcionarioId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Funcionário não informado.'
+      });
+    }
+
+    if (!funcionarioNome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome do funcionário não informado.'
+      });
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataReferencia)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data de referência inválida. Use o formato YYYY-MM-DD.'
+      });
+    }
+
+    if (!tipoJustificativa) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tipo de justificativa não informado.'
+      });
+    }
+
+    if (!descricao) {
+      return res.status(400).json({
+        success: false,
+        message: 'Descrição da justificativa não informada.'
+      });
+    }
+
+    const [result] = await pool.query(`
+      INSERT INTO SF_SOLICITACOES_JUSTIFICATIVAS_PONTO (
+        funcionario_id,
+        funcionario_nome,
+        data_referencia,
+        tipo_justificativa,
+        descricao,
+        anexo_referencia,
+        status_gestor,
+        status_rh,
+        criado_por,
+        criado_em,
+        atualizado_em
+      ) VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE', 'PENDENTE', ?, NOW(), NOW())
+    `, [
+      funcionarioId,
+      funcionarioNome,
+      dataReferencia,
+      tipoJustificativa,
+      descricao,
+      anexoReferencia || null,
+      criadoPor || null
+    ]);
+
+    return res.json({
+      success: true,
+      id: result?.insertId || null,
+      message: 'Justificativa cadastrada com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao cadastrar justificativa de ponto:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao cadastrar justificativa de ponto.',
+      error: err.message
+    });
+  }
+});
+
+app.patch('/api/solicitacoes/justificativas-ponto/:id/status', async (req, res) => {
+  try {
+    const id = Number(req.params.id || 0);
+    const perfil = String(req.body?.perfil || '').trim().toUpperCase();
+    const status = String(req.body?.status || '').trim().toUpperCase();
+    const observacao = String(req.body?.observacao || '').trim();
+    const usuario = String(req.body?.usuario || '').trim();
+
+    if (!id || Number.isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da justificativa inválido.'
+      });
+    }
+
+    if (!['GESTOR', 'RH'].includes(perfil)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Perfil inválido. Use GESTOR ou RH.'
+      });
+    }
+
+    if (!['PENDENTE', 'EM_ANALISE', 'APROVADO', 'REJEITADO'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status inválido.'
+      });
+    }
+
+    let query = '';
+    let params = [];
+
+    if (perfil === 'GESTOR') {
+      query = `
+        UPDATE SF_SOLICITACOES_JUSTIFICATIVAS_PONTO
+        SET
+          status_gestor = ?,
+          observacao_gestor = ?,
+          gestor_usuario = ?,
+          gestor_data = NOW(),
+          atualizado_em = NOW()
+        WHERE id = ?
+      `;
+      params = [status, observacao || null, usuario || null, id];
+    } else {
+      query = `
+        UPDATE SF_SOLICITACOES_JUSTIFICATIVAS_PONTO
+        SET
+          status_rh = ?,
+          observacao_rh = ?,
+          rh_usuario = ?,
+          rh_data = NOW(),
+          atualizado_em = NOW()
+        WHERE id = ?
+      `;
+      params = [status, observacao || null, usuario || null, id];
+    }
+
+    const [result] = await pool.query(query, params);
+
+    if (!result?.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Justificativa não encontrada.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Status da justificativa atualizado com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao atualizar status da justificativa:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar status da justificativa.',
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id || 0);
+
+    if (!id || Number.isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID inválido.'
+      });
+    }
+
+    const [rows] = await pool.query(`
+      SELECT
+        id,
+        funcionario_id AS funcionarioId,
+        funcionario_nome AS funcionarioNome,
+        DATE_FORMAT(data_referencia, '%Y-%m-%d') AS dataReferencia,
+        tipo_justificativa AS tipoJustificativa,
+        descricao,
+        anexo_referencia AS anexoReferencia,
+        status_gestor AS statusGestor,
+        observacao_gestor AS observacaoGestor,
+        gestor_usuario AS gestorUsuario,
+        gestor_data AS gestorData,
+        status_rh AS statusRh,
+        observacao_rh AS observacaoRh,
+        rh_usuario AS rhUsuario,
+        rh_data AS rhData,
+        criado_por AS criadoPor,
+        criado_em AS criadoEm,
+        atualizado_em AS atualizadoEm
+      FROM SF_SOLICITACOES_JUSTIFICATIVAS_PONTO
+      WHERE id = ?
+      LIMIT 1
+    `, [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Justificativa não encontrada.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      item: rows[0]
+    });
+  } catch (err) {
+    console.error('Erro ao buscar justificativa por ID:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar justificativa.',
+      error: err.message
+    });
+  }
+});
+
+app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id || 0);
+
+    const funcionarioId = String(req.body?.funcionarioId || '').trim();
+    const funcionarioNome = String(req.body?.funcionarioNome || '').trim();
+    const dataReferencia = String(req.body?.dataReferencia || '').trim();
+    const tipoJustificativa = String(req.body?.tipoJustificativa || '').trim();
+    const descricao = String(req.body?.descricao || '').trim();
+    const anexoReferencia = String(req.body?.anexoReferencia || '').trim();
+
+    if (!id || Number.isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da justificativa inválido.'
+      });
+    }
+
+    if (!funcionarioId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Funcionário não informado.'
+      });
+    }
+
+    if (!funcionarioNome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome do funcionário não informado.'
+      });
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataReferencia)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data de referência inválida. Use o formato YYYY-MM-DD.'
+      });
+    }
+
+    if (!tipoJustificativa) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tipo de justificativa não informado.'
+      });
+    }
+
+    if (!descricao) {
+      return res.status(400).json({
+        success: false,
+        message: 'Descrição da justificativa não informada.'
+      });
+    }
+
+    const [result] = await pool.query(`
+      UPDATE SF_SOLICITACOES_JUSTIFICATIVAS_PONTO
+      SET
+        funcionario_id = ?,
+        funcionario_nome = ?,
+        data_referencia = ?,
+        tipo_justificativa = ?,
+        descricao = ?,
+        anexo_referencia = ?,
+        atualizado_em = NOW()
+      WHERE id = ?
+    `, [
+      funcionarioId,
+      funcionarioNome,
+      dataReferencia,
+      tipoJustificativa,
+      descricao,
+      anexoReferencia || null,
+      id
+    ]);
+
+    if (!result?.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Justificativa não encontrada.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Justificativa atualizada com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao editar justificativa de ponto:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao editar justificativa de ponto.',
+      error: err.message
+    });
+  }
+});
+
 // =====================
 // Inicia servidor (sempre por último)
 // =====================
