@@ -18417,6 +18417,26 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
         diaSemana
       });
 
+      const diasSemanaJornada = jornada
+        ? {
+            domingo: String(jornada.TRABALHA_DOMINGO || '').toUpperCase() === 'S',
+            segunda: String(jornada.TRABALHA_SEGUNDA || '').toUpperCase() === 'S',
+            terca: String(jornada.TRABALHA_TERCA || '').toUpperCase() === 'S',
+            quarta: String(jornada.TRABALHA_QUARTA || '').toUpperCase() === 'S',
+            quinta: String(jornada.TRABALHA_QUINTA || '').toUpperCase() === 'S',
+            sexta: String(jornada.TRABALHA_SEXTA || '').toUpperCase() === 'S',
+            sabado: String(jornada.TRABALHA_SABADO || '').toUpperCase() === 'S'
+          }
+        : {
+            domingo: false,
+            segunda: false,
+            terca: false,
+            quarta: false,
+            quinta: false,
+            sexta: false,
+            sabado: false
+          };
+
       const trabalhaNoDia = jornada
         ? verificaSeJornadaTrabalhaNoDia(jornada, diaSemana)
         : false;
@@ -18442,13 +18462,14 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
               cargaHoraria: jornada.CARGA_HORARIA || '',
               toleranciaAtrasoMin: Number(jornada.TOLERANCIA_ATRASO_MIN || 0),
               toleranciaExtraMin: Number(jornada.TOLERANCIA_EXTRA_MIN || 0),
-              trabalhaDomingo: String(jornada.TRABALHA_DOMINGO || '').toUpperCase() === 'S',
-              trabalhaSegunda: String(jornada.TRABALHA_SEGUNDA || '').toUpperCase() === 'S',
-              trabalhaTerca: String(jornada.TRABALHA_TERCA || '').toUpperCase() === 'S',
-              trabalhaQuarta: String(jornada.TRABALHA_QUARTA || '').toUpperCase() === 'S',
-              trabalhaQuinta: String(jornada.TRABALHA_QUINTA || '').toUpperCase() === 'S',
-              trabalhaSexta: String(jornada.TRABALHA_SEXTA || '').toUpperCase() === 'S',
-              trabalhaSabado: String(jornada.TRABALHA_SABADO || '').toUpperCase() === 'S'
+              trabalhaDomingo: diasSemanaJornada.domingo,
+              trabalhaSegunda: diasSemanaJornada.segunda,
+              trabalhaTerca: diasSemanaJornada.terca,
+              trabalhaQuarta: diasSemanaJornada.quarta,
+              trabalhaQuinta: diasSemanaJornada.quinta,
+              trabalhaSexta: diasSemanaJornada.sexta,
+              trabalhaSabado: diasSemanaJornada.sabado,
+              diasSemana: diasSemanaJornada
             }
           : null,
 
@@ -18460,11 +18481,35 @@ app.get('/api/solicitacoes/usuarios-dia', async (req, res) => {
                 saidaIntervalo: jornada.HORA_SAIDA_INTERVALO || '',
                 retornoIntervalo: jornada.HORA_RETORNO_INTERVALO || '',
                 saida: jornada.HORA_FIM_EXPEDIENTE || ''
-              }
+              },
+              diasSemana: diasSemanaJornada,
+              trabalhaDomingo: diasSemanaJornada.domingo,
+              trabalhaSegunda: diasSemanaJornada.segunda,
+              trabalhaTerca: diasSemanaJornada.terca,
+              trabalhaQuarta: diasSemanaJornada.quarta,
+              trabalhaQuinta: diasSemanaJornada.quinta,
+              trabalhaSexta: diasSemanaJornada.sexta,
+              trabalhaSabado: diasSemanaJornada.sabado
             }
           : {
               trabalhaNoDia: false,
-              horarioPrevisto: null
+              horarioPrevisto: null,
+              diasSemana: {
+                domingo: false,
+                segunda: false,
+                terca: false,
+                quarta: false,
+                quinta: false,
+                sexta: false,
+                sabado: false
+              },
+              trabalhaDomingo: false,
+              trabalhaSegunda: false,
+              trabalhaTerca: false,
+              trabalhaQuarta: false,
+              trabalhaQuinta: false,
+              trabalhaSexta: false,
+              trabalhaSabado: false
             },
 
         batidas: batidasOrdenadas.map(item => ({
@@ -18512,7 +18557,10 @@ function normalizarTextoBackend(valor) {
 }
 
 function obterTipoRecorrenciaBackend(item) {
-  const tipo = normalizarTextoBackend(item?.TIPORECORRENCIA).toUpperCase();
+  const tipo = normalizarTextoBackend(item?.TIPORECORRENCIA)
+    .toUpperCase()
+    .replaceAll('_', '');
+
   if (tipo) return tipo;
 
   return normalizarTextoBackend(item?.REPETETODOANO).toUpperCase() === 'S'
@@ -18523,6 +18571,22 @@ function obterTipoRecorrenciaBackend(item) {
 function verificarSeDataEhFeriadoBackend(dataIso, itensCalendario) {
   const mmdd = dataIso.slice(5);
   const observacoes = [];
+  const datasRemovidasPorTroca = new Set();
+
+  for (const item of itensCalendario) {
+    const status = normalizarTextoBackend(item?.STATUS).toUpperCase();
+    if (status && status !== 'ATIVO') continue;
+
+    const tipo = obterTipoRecorrenciaBackend(item);
+    if (tipo !== 'TROCAFERIADO') continue;
+
+    const originalInicial = normalizarTextoBackend(item?.DATAINICIALTROCA || item?.DATAINICIAL);
+    const originalFinal = normalizarTextoBackend(item?.DATAFINALTROCA || item?.DATAFINAL || originalInicial);
+
+    if (originalInicial && dataIso >= originalInicial && dataIso <= originalFinal) {
+      datasRemovidasPorTroca.add(dataIso);
+    }
+  }
 
   for (const item of itensCalendario) {
     const status = normalizarTextoBackend(item?.STATUS).toUpperCase();
@@ -18530,7 +18594,7 @@ function verificarSeDataEhFeriadoBackend(dataIso, itensCalendario) {
 
     const tipo = obterTipoRecorrenciaBackend(item);
 
-    if (tipo === 'TROCA_FERIADO') {
+    if (tipo === 'TROCAFERIADO') {
       const novaInicial = normalizarTextoBackend(item?.NOVADATAINICIAL);
       const novaFinal = normalizarTextoBackend(item?.NOVADATAFINAL || item?.NOVADATAINICIAL);
 
@@ -18538,6 +18602,10 @@ function verificarSeDataEhFeriadoBackend(dataIso, itensCalendario) {
         observacoes.push(item?.OBSERVACAO || item?.PERIODO || 'Feriado');
       }
 
+      continue;
+    }
+
+    if (datasRemovidasPorTroca.has(dataIso)) {
       continue;
     }
 
@@ -18638,7 +18706,9 @@ function avaliarInconsistenciaUsuario({ ehFeriado, jornada, batidas, diaSemana }
   if (!trabalhaNoDia && batidas.length > 0) {
     return {
       inconsistente: true,
-      motivo: 'Possui batidas em dia não previsto na jornada.'
+      motivo: diaSemana === 6
+        ? 'Possui batidas em sábado não previsto na jornada.'
+        : 'Possui batidas em dia não previsto na jornada.'
     };
   }
 
@@ -18674,14 +18744,22 @@ function avaliarInconsistenciaUsuario({ ehFeriado, jornada, batidas, diaSemana }
     ? dataHoraParaMinutos(batidasOrdenadas[batidasOrdenadas.length - 1].DATA_HORA)
     : null;
 
-  if (inicioEsperado != null && primeiraBatida != null && primeiraBatida > inicioEsperado + toleranciaAtraso) {
+  if (
+    inicioEsperado != null &&
+    primeiraBatida != null &&
+    primeiraBatida > inicioEsperado + toleranciaAtraso
+  ) {
     return {
       inconsistente: true,
       motivo: 'Primeira batida após a tolerância de atraso da jornada.'
     };
   }
 
-  if (fimEsperado != null && ultimaBatida != null && ultimaBatida < fimEsperado - toleranciaExtra) {
+  if (
+    fimEsperado != null &&
+    ultimaBatida != null &&
+    ultimaBatida < fimEsperado - toleranciaExtra
+  ) {
     return {
       inconsistente: true,
       motivo: 'Última batida antes do horário esperado de término da jornada.'
