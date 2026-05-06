@@ -1379,6 +1379,8 @@ app.get('/api/usuarios', async (req, res) => {
         setor,
         FUNCAO AS funcao,
         DATA_ADMISSAO AS data_admissao,
+        BATE_PONTO AS bate_ponto,
+        DATA_INICIO_BATE_PONTO AS data_inicio_bate_ponto,
         LOCAL_TRABALHO AS local_trabalho,
         MUST_CHANGE_PASSWORD AS must_change_password,
         FOTO AS foto,
@@ -1504,6 +1506,11 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
     const funcao = texto(req.body?.funcao);
     const data_admissao = nullableDate(req.body?.dataadmissao || req.body?.data_admissao);
 
+    const bate_ponto = Number(req.body?.bateponto ?? req.body?.bate_ponto ?? 0) ? 1 : 0;
+    let data_inicio_bate_ponto = nullableDate(
+      req.body?.datainiciobateponto || req.body?.data_inicio_bate_ponto
+    );
+
     const centro_custo = titleCaseNome(
       req.body?.localtrabalho || req.body?.local_trabalho || req.body?.centro_custo
     );
@@ -1555,6 +1562,54 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
       ? JSON.stringify(Array.isArray(req.body?.filhos) ? req.body.filhos : [])
       : null;
 
+    if (!nome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome é obrigatório.'
+      });
+    }
+
+    if (!perfil) {
+      return res.status(400).json({
+        success: false,
+        message: 'Perfil é obrigatório.'
+      });
+    }
+
+    if (!setor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Setor é obrigatório.'
+      });
+    }
+
+    if (!senha || senha.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Senha inválida. Informe no mínimo 6 caracteres.'
+      });
+    }
+
+    if (bate_ponto && !data_inicio_bate_ponto) {
+      data_inicio_bate_ponto = data_admissao || null;
+    }
+
+    if (
+      bate_ponto &&
+      data_admissao &&
+      data_inicio_bate_ponto &&
+      data_inicio_bate_ponto < data_admissao
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'A data de início para bater ponto não pode ser anterior à data de admissão.'
+      });
+    }
+
+    if (!bate_ponto) {
+      data_inicio_bate_ponto = null;
+    }
+
     const [cpfExistente] = await pool.query(
       `SELECT ID FROM SF_USUARIO WHERE CPF = ? LIMIT 1`,
       [cpf]
@@ -1593,6 +1648,8 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
         SETOR,
         FUNCAO,
         DATA_ADMISSAO,
+        BATE_PONTO,
+        DATA_INICIO_BATE_PONTO,
         CENTRO_CUSTO,
         LOCAL_TRABALHO,
         STATUS,
@@ -1616,7 +1673,7 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
         QUANTIDADE_FILHOS,
         FILHOS,
         MUST_CHANGE_PASSWORD
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     `, [
       nome,
       email,
@@ -1626,6 +1683,8 @@ app.post('/api/gestao-usuarios-adicionar', async (req, res) => {
       setor,
       funcao || null,
       data_admissao,
+      bate_ponto,
+      data_inicio_bate_ponto,
       centro_custo || null,
       local_trabalho || null,
       status,
@@ -1691,8 +1750,17 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     const funcao = texto(req.body?.funcao);
     const data_admissao = nullableDate(req.body?.dataadmissao || req.body?.data_admissao);
 
-    const centro_custo = titleCaseNome(req.body?.localtrabalho || req.body?.local_trabalho || req.body?.centro_custo);
-    const local_trabalho = titleCaseNome(req.body?.unidadetrabalho || req.body?.unidade_trabalho || req.body?.local_trabalho);
+    const bate_ponto = Number(req.body?.bateponto ?? req.body?.bate_ponto ?? 0) ? 1 : 0;
+    let data_inicio_bate_ponto = nullableDate(
+      req.body?.datainiciobateponto || req.body?.data_inicio_bate_ponto
+    );
+
+    const centro_custo = titleCaseNome(
+      req.body?.localtrabalho || req.body?.local_trabalho || req.body?.centro_custo
+    );
+    const local_trabalho = titleCaseNome(
+      req.body?.unidadetrabalho || req.body?.unidade_trabalho || req.body?.local_trabalho
+    );
 
     const status = texto(req.body?.status) || 'Ativo';
 
@@ -1715,8 +1783,8 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     const foto = req.body?.foto;
     const apelido = texto(req.body?.apelido);
 
-    const numero_calcado = String(req.body?.numero_calcado ?? '').trim() !== ''
-      ? Number(req.body?.numero_calcado)
+    const numero_calcado = String(req.body?.numerocalcado ?? req.body?.numero_calcado ?? '').trim() !== ''
+      ? Number(req.body?.numerocalcado ?? req.body?.numero_calcado)
       : null;
 
     const tamanhoCamisaBruto = texto(req.body?.tamanhocamisa || req.body?.tamanho_camisa);
@@ -1737,6 +1805,27 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
       ? JSON.stringify(Array.isArray(req.body?.filhos) ? req.body.filhos : [])
       : null;
 
+    if (!nome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome é obrigatório.'
+      });
+    }
+
+    if (!perfil) {
+      return res.status(400).json({
+        success: false,
+        message: 'Perfil é obrigatório.'
+      });
+    }
+
+    if (!setor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Setor é obrigatório.'
+      });
+    }
+
     const [rows] = await pool.query(
       `SELECT ID, FOTO, CNH_ARQUIVO FROM SF_USUARIO WHERE ID = ? LIMIT 1`,
       [id]
@@ -1747,6 +1836,26 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
     }
 
     const atual = rows[0];
+
+    if (bate_ponto && !data_inicio_bate_ponto) {
+      data_inicio_bate_ponto = data_admissao || null;
+    }
+
+    if (
+      bate_ponto &&
+      data_admissao &&
+      data_inicio_bate_ponto &&
+      data_inicio_bate_ponto < data_admissao
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'A data de início para bater ponto não pode ser anterior à data de admissão.'
+      });
+    }
+
+    if (!bate_ponto) {
+      data_inicio_bate_ponto = null;
+    }
 
     if (cpf) {
       const [cpfExistente] = await pool.query(
@@ -1793,6 +1902,8 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
              SETOR = ?,
              FUNCAO = ?,
              DATA_ADMISSAO = ?,
+             BATE_PONTO = ?,
+             DATA_INICIO_BATE_PONTO = ?,
              CENTRO_CUSTO = ?,
              LOCAL_TRABALHO = ?,
              STATUS = ?,
@@ -1824,6 +1935,8 @@ app.put('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
       setor,
       funcao || null,
       data_admissao,
+      bate_ponto,
+      data_inicio_bate_ponto,
       centro_custo || null,
       local_trabalho || null,
       status,
@@ -1909,6 +2022,8 @@ app.get('/api/gestao-usuarios', async (req, res) => {
         SETOR,
         FUNCAO,
         DATA_ADMISSAO AS DATAADMISSAO,
+        BATE_PONTO AS BATEPONTO,
+        DATA_INICIO_BATE_PONTO AS DATAINICIOBATEPONTO,
         CENTRO_CUSTO AS LOCALTRABALHO,
         LOCAL_TRABALHO AS UNIDADETRABALHO,
         STATUS,
@@ -1975,6 +2090,8 @@ app.get('/api/gestao-usuarios/:id(\\d+)', async (req, res) => {
          SETOR,
          FUNCAO,
          DATA_ADMISSAO AS DATAADMISSAO,
+         BATE_PONTO AS BATEPONTO,
+         DATA_INICIO_BATE_PONTO AS DATAINICIOBATEPONTO,
          CENTRO_CUSTO AS LOCALTRABALHO,
          LOCAL_TRABALHO AS UNIDADETRABALHO,
          STATUS,
