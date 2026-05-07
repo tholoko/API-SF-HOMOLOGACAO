@@ -19382,6 +19382,72 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
   }
 });
 
+app.delete('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id || 0);
+
+    if (!id || Number.isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da justificativa inválido.'
+      });
+    }
+
+    const [rows] = await pool.query(`
+      SELECT id, caminho_arquivo
+      FROM SF_SOLICITACOES_JUSTIFICATIVAS_PONTO
+      WHERE id = ?
+      LIMIT 1
+    `, [id]);
+
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Justificativa não encontrada.'
+      });
+    }
+
+    const item = rows[0];
+
+    const [result] = await pool.query(`
+      DELETE FROM SF_SOLICITACOES_JUSTIFICATIVAS_PONTO
+      WHERE id = ?
+    `, [id]);
+
+    if (!result?.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Justificativa não encontrada.'
+      });
+    }
+
+    if (item?.caminho_arquivo) {
+      try {
+        const nomeArquivo = path.basename(String(item.caminho_arquivo || ''));
+        const caminhoFisico = path.join(pastaUploadsJustificativas, nomeArquivo);
+
+        if (fs.existsSync(caminhoFisico)) {
+          fs.unlinkSync(caminhoFisico);
+        }
+      } catch (erroArquivo) {
+        console.error('Erro ao excluir arquivo anexo da justificativa:', erroArquivo);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Justificativa excluída com sucesso.'
+    });
+  } catch (err) {
+    console.error('Erro ao excluir justificativa de ponto:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir justificativa de ponto.',
+      error: err.message
+    });
+  }
+});
+
 
 const storageJustificativas = multer.diskStorage({
   destination: (req, file, cb) => cb(null, pastaUploadsJustificativas),
