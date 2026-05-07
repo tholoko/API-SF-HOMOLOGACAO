@@ -19382,11 +19382,6 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
   }
 });
 
-const pastaUploadsJustificativas = path.join(
-  DIRETORIO_VOLUME_anexos,
-  'justificativas-ponto'
-);
-fs.mkdirSync(pastaUploadsJustificativas, { recursive: true });
 
 const storageJustificativas = multer.diskStorage({
   destination: (req, file, cb) => cb(null, pastaUploadsJustificativas),
