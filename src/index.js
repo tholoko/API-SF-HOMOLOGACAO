@@ -18967,7 +18967,7 @@ app.get('/api/solicitacoes/justificativas-ponto', async (req, res) => {
         DATE_FORMAT(data_referencia, '%Y-%m-%d') AS dataReferencia,
         tipo_justificativa AS tipoJustificativa,
         tipo_periodo AS tipoPeriodo,
-        dia_todo AS diaTodo,
+        dia_todo AS dia_todo,
         TIME_FORMAT(hora_inicial, '%H:%i') AS horaInicial,
         TIME_FORMAT(hora_final, '%H:%i') AS horaFinal,
         diferenca_minutos AS diferencaMinutos,
@@ -19015,7 +19015,7 @@ app.post('/api/solicitacoes/justificativas-ponto', async (req, res) => {
     const dataReferencia = String(req.body?.dataReferencia || '').trim();
     const tipoJustificativa = String(req.body?.tipoJustificativa || '').trim().toUpperCase();
     const tipoPeriodo = String(req.body?.tipoPeriodo || 'DIA_TODO').trim().toUpperCase();
-    const diaTodo = String(req.body?.diaTodo || (tipoPeriodo === 'DIA_TODO' ? 'S' : 'N')).trim().toUpperCase();
+    const dia_todo = String(req.body?.dia_todo || (tipoPeriodo === 'DIA_TODO' ? 'S' : 'N')).trim().toUpperCase();
     const horaInicial = String(req.body?.horaInicial || '').trim();
     const horaFinal = String(req.body?.horaFinal || '').trim();
     const diferencaMinutos = Number(req.body?.diferencaMinutos || 0);
@@ -19088,7 +19088,7 @@ app.post('/api/solicitacoes/justificativas-ponto', async (req, res) => {
       dataReferencia,
       tipoJustificativa,
       tipoPeriodo,
-      diaTodo === 'S' ? 'S' : 'N',
+      dia_todo === 'S' ? 'S' : 'N',
       tipoPeriodo === 'PERIODO' ? horaInicial : null,
       tipoPeriodo === 'PERIODO' ? horaFinal : null,
       Number.isFinite(diferencaMinutos) ? diferencaMinutos : 0,
@@ -19217,7 +19217,7 @@ app.get('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
         DATE_FORMAT(data_referencia, '%Y-%m-%d') AS dataReferencia,
         tipo_justificativa AS tipoJustificativa,
         tipo_periodo AS tipoPeriodo,
-        dia_todo AS diaTodo,
+        dia_todo AS dia_todo,
         TIME_FORMAT(hora_inicial, '%H:%i') AS horaInicial,
         TIME_FORMAT(hora_final, '%H:%i') AS horaFinal,
         diferenca_minutos AS diferencaMinutos,
@@ -19274,7 +19274,7 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
     const dataReferencia = String(req.body?.dataReferencia || '').trim();
     const tipoJustificativa = String(req.body?.tipoJustificativa || '').trim().toUpperCase();
     const tipoPeriodo = String(req.body?.tipoPeriodo || 'DIA_TODO').trim().toUpperCase();
-    const diaTodo = String(req.body?.diaTodo || (tipoPeriodo === 'DIA_TODO' ? 'S' : 'N')).trim().toUpperCase();
+    const dia_todo = String(req.body?.dia_todo || (tipoPeriodo === 'DIA_TODO' ? 'S' : 'N')).trim().toUpperCase();
     const horaInicial = String(req.body?.horaInicial || '').trim();
     const horaFinal = String(req.body?.horaFinal || '').trim();
     const diferencaMinutos = Number(req.body?.diferencaMinutos || 0);
@@ -19347,7 +19347,7 @@ app.put('/api/solicitacoes/justificativas-ponto/:id', async (req, res) => {
       dataReferencia,
       tipoJustificativa,
       tipoPeriodo,
-      diaTodo === 'S' ? 'S' : 'N',
+      dia_todo === 'S' ? 'S' : 'N',
       tipoPeriodo === 'PERIODO' ? horaInicial : null,
       tipoPeriodo === 'PERIODO' ? horaFinal : null,
       Number.isFinite(diferencaMinutos) ? diferencaMinutos : 0,
